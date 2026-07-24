@@ -59,6 +59,43 @@ export function toRow(raw: RawContract): Row {
   };
 }
 
+/** Clave de cruce entre un contrato y una cotización: tipo + vencimiento + strike. */
+function contractKey(contractType: ContractType, expiration: string, strike: number): string {
+  return `${contractType}|${expiration}|${strike}`;
+}
+
+export interface BidQuote {
+  contractType: ContractType;
+  expiration: string;
+  strike: number;
+  bid: number | null;
+}
+
+/**
+ * Sobrescribe el precio de las filas con el BID real de Schwab cuando hay match
+ * (mismo tipo + vencimiento + strike) y el bid es válido (> 0). Las que no
+ * cruzan se quedan con el proxy de Massive tal cual. Pura — fácil de testear.
+ */
+export function applySchwabBid(rows: Row[], quotes: BidQuote[]): Row[] {
+  const byKey = new Map<string, number>();
+  for (const q of quotes) {
+    if (typeof q.bid === "number" && q.bid > 0) {
+      byKey.set(contractKey(q.contractType, q.expiration, q.strike), q.bid);
+    }
+  }
+  if (byKey.size === 0) return rows;
+  return rows.map((row) => {
+    const bid = byKey.get(contractKey(row.contractType, row.expiration, row.strike));
+    if (bid === undefined) return row;
+    return {
+      ...row,
+      price: bid,
+      priceSource: "schwab_bid",
+      openPremium: openPremium(row.openInterest, bid),
+    };
+  });
+}
+
 /** Ordena por Open Interest de mayor a menor (Tarea 1). Devuelve un array nuevo. */
 export function sortByOpenInterestDesc(rows: Row[]): Row[] {
   return [...rows].sort((a, b) => b.openInterest - a.openInterest);

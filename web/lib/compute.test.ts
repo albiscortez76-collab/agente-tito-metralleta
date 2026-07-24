@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  applySchwabBid,
   contractPrice,
   countExpirations,
   notionalValue,
@@ -7,6 +8,7 @@ import {
   sortByOpenInterestDesc,
   toRow,
 } from "./compute";
+import type { BidQuote } from "./compute";
 import type { RawContract, Row } from "./types";
 
 describe("contractPrice", () => {
@@ -100,6 +102,67 @@ describe("sortByOpenInterestDesc", () => {
     const sorted = sortByOpenInterestDesc(rows);
     expect(sorted.map((r) => r.openInterest)).toEqual([100, 27, 5]);
     expect(rows[0].openInterest).toBe(5); // original intacto
+  });
+});
+
+describe("applySchwabBid", () => {
+  const rows: Row[] = [
+    {
+      optionTicker: "O:SPY260724C00738000",
+      contractType: "call",
+      expiration: "2026-07-24",
+      strike: 738,
+      openInterest: 60,
+      volume: 10,
+      price: 2.81,
+      priceSource: "day_close",
+      openPremium: 60 * 2.81,
+      notionalValue: 60 * 100 * 738,
+    },
+    {
+      optionTicker: "O:SPY260724P00700000",
+      contractType: "put",
+      expiration: "2026-07-24",
+      strike: 700,
+      openInterest: 40,
+      volume: 5,
+      price: 1.5,
+      priceSource: "last_trade",
+      openPremium: 40 * 1.5,
+      notionalValue: 40 * 100 * 700,
+    },
+  ];
+
+  it("sobrescribe precio y openPremium cuando hay match", () => {
+    const quotes: BidQuote[] = [
+      { contractType: "call", expiration: "2026-07-24", strike: 738, bid: 0.56 },
+    ];
+    const out = applySchwabBid(rows, quotes);
+    expect(out[0].price).toBe(0.56);
+    expect(out[0].priceSource).toBe("schwab_bid");
+    expect(out[0].openPremium).toBeCloseTo(60 * 0.56);
+    // el que no cruza queda intacto
+    expect(out[1]).toEqual(rows[1]);
+  });
+
+  it("ignora bids nulos o no positivos", () => {
+    const quotes: BidQuote[] = [
+      { contractType: "call", expiration: "2026-07-24", strike: 738, bid: 0 },
+      { contractType: "put", expiration: "2026-07-24", strike: 700, bid: null },
+    ];
+    expect(applySchwabBid(rows, quotes)).toEqual(rows);
+  });
+
+  it("no muta el array original", () => {
+    const quotes: BidQuote[] = [
+      { contractType: "call", expiration: "2026-07-24", strike: 738, bid: 0.56 },
+    ];
+    applySchwabBid(rows, quotes);
+    expect(rows[0].priceSource).toBe("day_close");
+  });
+
+  it("sin cotizaciones devuelve las filas tal cual", () => {
+    expect(applySchwabBid(rows, [])).toBe(rows);
   });
 });
 

@@ -1,9 +1,11 @@
 // GET /api/chain?ticker=XXX — transmite los pasos del proceso por SSE y al final los datos.
 
-import { countExpirations, sortByOpenInterestDesc, toRow } from "@/lib/compute";
+import { applySchwabBid, countExpirations, sortByOpenInterestDesc, toRow } from "@/lib/compute";
+import type { BidQuote } from "@/lib/compute";
 import { structureScore } from "@/lib/structure";
 import { saveChainSnapshot, type ChainSnapshot } from "@/lib/chainStore";
 import { fetchCompany, fetchOptionChain, MassiveError } from "@/lib/massive";
+import { fetchOptionChain as fetchSchwabChain } from "@/lib/schwab";
 import type { ChainEvent, ChainMeta, Row } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -60,6 +62,20 @@ export async function GET(request: Request) {
           type: "step",
           label: `Consolidando ${rows.length} contratos en ${expirations} vencimientos…`,
         });
+
+        send({ type: "step", label: "Buscando BID real en Schwab…" });
+        try {
+          const schwabContracts = await fetchSchwabChain(ticker);
+          const quotes: BidQuote[] = schwabContracts.map((c) => ({
+            contractType: c.contractType === "PUT" ? "put" : "call",
+            expiration: c.expiration,
+            strike: c.strike,
+            bid: c.bidPrice,
+          }));
+          rows = applySchwabBid(rows, quotes);
+        } catch {
+          // Schwab es un plus, no un requisito — si falla, se queda con el proxy de Massive.
+        }
 
         send({ type: "step", label: "Calculando Open Premium por strike…" });
         send({ type: "step", label: "Calculando Valor Nocional…" });

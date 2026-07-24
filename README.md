@@ -51,6 +51,7 @@ El resumen se escribe en lenguaje llano, por ejemplo:
 |--------|----------|
 | [Massive](https://massive.com) (antes Polygon.io) | Option chain, barras del subyacente, referencia y noticias por ticker |
 | MarketSnack | Time & Sales con bid/ask, griegos e IV por operación |
+| [Charles Schwab](https://developer.schwab.com) (Trader API, opcional) | BID real por contrato para Open Premium (Massive no lo da en el plan actual); solo lectura |
 | CNBC · Investing.com | Feeds RSS de contexto macro |
 
 ## Cómo correrlo
@@ -64,8 +65,10 @@ npm run dev
 
 Abre <http://localhost:3000>.
 
+**Schwab (opcional, para BID real):** con `SCHWAB_CLIENT_ID`/`SCHWAB_CLIENT_SECRET` ya en `.env.local`, corre `npm run schwab:auth` — pide abrir una URL de autorización en tu navegador (con tu sesión real de Schwab) y pegar de vuelta la URL de callback. Genera `SCHWAB_REFRESH_TOKEN`. **Caduca cada 7 días** — repite el comando cuando la cadena vuelva a mostrar solo precios proxy de Massive.
+
 ```bash
-npm test          # 262 tests
+npm test          # 299 tests
 npx tsc --noEmit  # typecheck
 ```
 

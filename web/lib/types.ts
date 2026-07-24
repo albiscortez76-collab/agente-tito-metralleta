@@ -27,8 +27,8 @@ export interface RawContract {
   };
 }
 
-/** De dónde salió el precio usado para Open Premium (bid no está disponible en este plan). */
-export type PriceSource = "last_trade" | "day_close" | "day_vwap" | "none";
+/** De dónde salió el precio usado para Open Premium. schwab_bid = BID real (Schwab); el resto son proxies de Massive. */
+export type PriceSource = "schwab_bid" | "last_trade" | "day_close" | "day_vwap" | "none";
 
 /** Fila procesada que consume la tabla. */
 export interface Row {
