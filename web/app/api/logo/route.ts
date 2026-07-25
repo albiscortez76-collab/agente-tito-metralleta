@@ -1,12 +1,13 @@
 // GET /api/logo?ticker=XXX — sirve el logo de la empresa por proxy (la API key queda en el servidor).
 
 import { fetchLogoImage } from "@/lib/massive";
+import { normalizeTicker } from "@/lib/tickers";
 
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const ticker = (searchParams.get("ticker") ?? "").trim().toUpperCase();
+  const ticker = normalizeTicker(searchParams.get("ticker") ?? "");
   if (!ticker) return new Response("ticker requerido", { status: 400 });
 
   try {

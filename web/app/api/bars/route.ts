@@ -3,6 +3,7 @@
 import { MassiveError } from "@/lib/massive";
 import { SchwabError } from "@/lib/schwab";
 import { fetchBarsAny } from "@/lib/underlyingBars";
+import { normalizeTicker } from "@/lib/tickers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,7 +16,7 @@ const TF: Record<string, { m: number; span: "day" | "minute"; days: number }> = 
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const ticker = (searchParams.get("ticker") ?? "").trim().toUpperCase();
+  const ticker = normalizeTicker(searchParams.get("ticker") ?? "");
   const tf = searchParams.get("tf") ?? "5m5d";
   const cfg = TF[tf] ?? TF["5m5d"];
   if (!ticker) return Response.json({ error: "ticker requerido" }, { status: 400 });

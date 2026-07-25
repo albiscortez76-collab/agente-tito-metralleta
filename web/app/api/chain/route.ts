@@ -10,7 +10,7 @@ import {
   fetchOptionChain as fetchSchwabChain,
   SchwabError,
 } from "@/lib/schwab";
-import { isIndexTicker } from "@/lib/tickers";
+import { isIndexTicker, normalizeTicker } from "@/lib/tickers";
 import type { ChainEvent, ChainMeta, Row } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -22,7 +22,7 @@ function sse(event: ChainEvent): string {
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const ticker = (searchParams.get("ticker") ?? "").trim().toUpperCase();
+  const ticker = normalizeTicker(searchParams.get("ticker") ?? "");
 
   const encoder = new TextEncoder();
 

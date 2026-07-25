@@ -3,13 +3,14 @@
 import { MassiveError } from "@/lib/massive";
 import { SchwabError } from "@/lib/schwab";
 import { fetchDailyBarsAny } from "@/lib/underlyingBars";
+import { normalizeTicker } from "@/lib/tickers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const ticker = (searchParams.get("ticker") ?? "").trim().toUpperCase();
+  const ticker = normalizeTicker(searchParams.get("ticker") ?? "");
   if (!ticker) {
     return Response.json({ error: "ticker requerido" }, { status: 400 });
   }

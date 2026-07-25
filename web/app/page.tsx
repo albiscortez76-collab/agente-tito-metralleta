@@ -11,6 +11,7 @@ import { gexAnalysis, type TradeLite } from "@/lib/gex";
 import { gexHeatmap, type HeatTrade } from "@/lib/gexHeatmap";
 import { predictPro } from "@/lib/prediction";
 import { findLevels, type ChainLevel, type FlowLevel } from "@/lib/levels";
+import { normalizeTicker } from "@/lib/tickers";
 import { int } from "./format";
 import HeaderBar from "./components/HeaderBar";
 import AnalysisLoader from "./components/AnalysisLoader";
@@ -247,7 +248,7 @@ export default function Dashboard() {
   const addStep = (s: string) => setSteps((p) => (p[p.length - 1] === s ? p : [...p, s]));
 
   function runSearch(t: string) {
-    const tk = t.trim().toUpperCase();
+    const tk = normalizeTicker(t);
     if (!tk || busy) return;
     chainEs.current?.close();
     flowEs.current?.close();

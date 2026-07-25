@@ -4,6 +4,7 @@
 //                                                   el precio real posterior (auto-evaluación)
 
 import { fetchDailyBarsAny } from "@/lib/underlyingBars";
+import { normalizeTicker } from "@/lib/tickers";
 import {
   loadJournal, savePrediction, reviewPredictions,
   type PredictionSnapshot,
@@ -14,7 +15,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const ticker = (searchParams.get("ticker") ?? "").trim().toUpperCase();
+  const ticker = normalizeTicker(searchParams.get("ticker") ?? "");
   if (!ticker) return Response.json({ error: "Falta el ticker." }, { status: 400 });
 
   try {
@@ -45,7 +46,7 @@ export async function POST(request: Request) {
       ticker?: string;
       snapshot?: Omit<PredictionSnapshot, "date" | "savedAt">;
     };
-    const ticker = (body.ticker ?? "").trim().toUpperCase();
+    const ticker = normalizeTicker(body.ticker ?? "");
     const s = body.snapshot;
     if (!ticker || !s || !(s.spot > 0)) {
       return Response.json({ error: "Datos inválidos." }, { status: 400 });

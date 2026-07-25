@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import type { AggressionScore, FlowRow } from "@/lib/flow";
+import { normalizeTicker } from "@/lib/tickers";
 
 interface StepLine { label: string; detail?: string }
 interface FlowMeta {
@@ -90,7 +91,7 @@ export default function FlowPage() {
 
   function search(e: React.FormEvent) {
     e.preventDefault();
-    const t = ticker.trim().toUpperCase();
+    const t = normalizeTicker(ticker);
     if (!t || loading) return;
     esRef.current?.close();
     setLoading(true);

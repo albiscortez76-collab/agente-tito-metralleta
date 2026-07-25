@@ -4,6 +4,7 @@
 
 import { loadTrades } from "@/lib/store";
 import { fetchDailyBarsAny } from "@/lib/underlyingBars";
+import { normalizeTicker } from "@/lib/tickers";
 import { validationScore, type FlowLite } from "@/lib/validation";
 
 export const runtime = "nodejs";
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const ticker = (searchParams.get("ticker") ?? "").trim().toUpperCase();
+  const ticker = normalizeTicker(searchParams.get("ticker") ?? "");
   if (!ticker) return Response.json({ error: "Falta el ticker." }, { status: 400 });
 
   try {

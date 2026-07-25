@@ -1,13 +1,14 @@
 // GET /api/news?ticker=XXX&name=... — Tarea 7: noticias en dos capas (macro RSS + empresa).
 
 import { buildNewsReport } from "@/lib/news";
+import { normalizeTicker } from "@/lib/tickers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const ticker = (searchParams.get("ticker") ?? "").trim().toUpperCase();
+  const ticker = normalizeTicker(searchParams.get("ticker") ?? "");
   const name = searchParams.get("name");
 
   if (!ticker) {

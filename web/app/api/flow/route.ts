@@ -7,6 +7,7 @@ import { saveTrades } from "@/lib/store";
 import { ivContextScore, type IvContextScore } from "@/lib/ivcontext";
 import { loadIvHistory, saveIvSnapshot } from "@/lib/ivStore";
 import { fetchDailyBarsAny } from "@/lib/underlyingBars";
+import { normalizeTicker } from "@/lib/tickers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,7 +40,7 @@ const CHART_PRESETS: Record<number, { minPremium: number; maxPages: number }> = 
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const ticker = (searchParams.get("ticker") ?? "").trim().toUpperCase();
+  const ticker = normalizeTicker(searchParams.get("ticker") ?? "");
   const period = searchParams.get("period") ?? "5d";
   const days = Number(searchParams.get("days"));
 
