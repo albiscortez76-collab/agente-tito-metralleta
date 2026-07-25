@@ -6,7 +6,7 @@ import { fetchFlow, MarketSnackError } from "@/lib/marketsnack";
 import { saveTrades } from "@/lib/store";
 import { ivContextScore, type IvContextScore } from "@/lib/ivcontext";
 import { loadIvHistory, saveIvSnapshot } from "@/lib/ivStore";
-import { fetchDailyBars } from "@/lib/massive";
+import { fetchDailyBarsAny } from "@/lib/underlyingBars";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -148,7 +148,7 @@ export async function GET(request: Request) {
         let ivContext: IvContextScore | null = null;
         try {
           const [dailyBars, ivHist] = await Promise.all([
-            fetchDailyBars(ticker, 365).catch(() => []),
+            fetchDailyBarsAny(ticker, 365).catch(() => []),
             loadIvHistory(ticker).catch(() => null),
           ]);
           ivContext = ivContextScore({

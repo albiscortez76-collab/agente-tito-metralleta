@@ -5,7 +5,12 @@ import type { BidQuote } from "@/lib/compute";
 import { structureScore } from "@/lib/structure";
 import { saveChainSnapshot, type ChainSnapshot } from "@/lib/chainStore";
 import { fetchCompany, fetchOptionChain, MassiveError } from "@/lib/massive";
-import { fetchOptionChain as fetchSchwabChain } from "@/lib/schwab";
+import {
+  fetchIndexCompany,
+  fetchOptionChain as fetchSchwabChain,
+  SchwabError,
+} from "@/lib/schwab";
+import { isIndexTicker } from "@/lib/tickers";
 import type { ChainEvent, ChainMeta, Row } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -33,13 +38,15 @@ export async function GET(request: Request) {
           return;
         }
 
+        const isIndex = isIndexTicker(ticker);
+
         send({ type: "step", label: `Buscando información de ${ticker}…` });
-        const company = await fetchCompany(ticker);
+        const company = isIndex ? await fetchIndexCompany(ticker) : await fetchCompany(ticker);
         send({ type: "company", company });
 
         send({ type: "step", label: "Conectando con Massive…" });
 
-        const { contracts, underlyingPrice, pages, truncated } =
+        const { contracts, underlyingPrice: massiveUnderlyingPrice, pages, truncated } =
           await fetchOptionChain(ticker, {
             onPage: (page, accumulated) => {
               send({
@@ -95,9 +102,12 @@ export async function GET(request: Request) {
           // el guardado no debe romper el reporte
         }
 
+        // Massive no da underlying_asset.price para índices (producto "Indices" aparte,
+        // no incluido en el plan actual) — el precio de la empresa/índice (ya resuelto
+        // arriba, vía Schwab para índices) sirve de respaldo.
         const meta: ChainMeta = {
           ticker,
-          underlyingPrice,
+          underlyingPrice: massiveUnderlyingPrice ?? company.price,
           contractCount: rows.length,
           expirationCount: expirations,
           pages,
@@ -106,7 +116,7 @@ export async function GET(request: Request) {
         send({ type: "done", rows, meta, structure, history });
       } catch (err) {
         const message =
-          err instanceof MassiveError
+          err instanceof MassiveError || err instanceof SchwabError
             ? err.message
             : "Error inesperado al consultar Massive.";
         send({ type: "error", message });

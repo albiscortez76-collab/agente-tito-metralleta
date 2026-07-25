@@ -1,5 +1,9 @@
-// Cliente de Charles Schwab (Trader API) — solo servidor. Fuente de bid/ask real.
+// Cliente de Charles Schwab (Trader API) — solo servidor. Fuente de bid/ask real,
+// y de precio/velas para índices (SPX, ...) que Massive no cubre en el plan actual.
 // Solo lectura de market data (quotes/chains). Nunca se usan endpoints de trading aquí.
+
+import { isIndexTicker } from "./tickers";
+import type { CompanyInfo, DailyBar, TfBar } from "./types";
 
 const BASE_URL = "https://api.schwabapi.com";
 const TOKEN_URL = `${BASE_URL}/v1/oauth/token`;
@@ -196,24 +200,39 @@ export interface SchwabOptionQuote {
   impliedVolatility: number | null;
 }
 
+const MIN_STRIKE_COUNT = 10;
+
 /**
  * Cadena de opciones (bid/ask + griegos por contrato) para un ticker, acotada a los
  * strikes más cercanos al spot. Sin `strikeCount` Schwab devuelve 502 en subyacentes
- * líquidos con miles de contratos (ej. SPY) — 100 es el máximo que responde de forma
- * confiable, cubre sobra para lo que se opera de verdad y deja fuera solo los strikes
- * muy OTM (esos siguen usando el proxy de Massive).
+ * líquidos (SPY, SPX...), y el límite que sí aguanta varía según cuántos vencimientos
+ * tenga cada uno (SPX tiene ~54, SPY ~34) — por eso, si da 502, se reintenta bajando
+ * el strikeCount a la mitad hasta que responda o hasta un piso de 10.
  */
 export async function fetchOptionChain(
   ticker: string,
   strikeCount = 100,
 ): Promise<SchwabOptionQuote[]> {
   const clean = ticker.trim().toUpperCase();
-  const json = await getJson<{
+  const symbol = isIndexTicker(clean) ? indexSymbol(clean) : clean;
+
+  let count = strikeCount;
+  let json: {
     callExpDateMap?: Record<string, Record<string, SchwabRawOption[]>>;
     putExpDateMap?: Record<string, Record<string, SchwabRawOption[]>>;
-  }>(
-    `/marketdata/v1/chains?symbol=${encodeURIComponent(clean)}&contractType=ALL&strikeCount=${strikeCount}`,
-  );
+  };
+  for (;;) {
+    try {
+      json = await getJson(
+        `/marketdata/v1/chains?symbol=${encodeURIComponent(symbol)}&contractType=ALL&strikeCount=${count}`,
+      );
+      break;
+    } catch (err) {
+      const is502 = err instanceof SchwabError && err.status === 502;
+      if (!is502 || count <= MIN_STRIKE_COUNT) throw err;
+      count = Math.max(MIN_STRIKE_COUNT, Math.floor(count / 2));
+    }
+  }
 
   const out: SchwabOptionQuote[] = [];
   const maps: [Record<string, Record<string, SchwabRawOption[]>> | undefined, "CALL" | "PUT"][] = [
@@ -247,6 +266,129 @@ export async function fetchOptionChain(
     }
   }
   return out;
+}
+
+/** Schwab pide los índices con "$" al frente (ej. "$SPX"), a diferencia de las acciones. */
+function indexSymbol(ticker: string): string {
+  return `$${ticker.trim().toUpperCase()}`;
+}
+
+interface SchwabIndexQuote {
+  quote?: {
+    lastPrice?: number;
+    closePrice?: number;
+    openPrice?: number;
+    highPrice?: number;
+    lowPrice?: number;
+    netChange?: number;
+    netPercentChange?: number;
+  };
+  reference?: { description?: string };
+}
+
+/** Info + precio de un índice (SPX, ...) — Massive no cubre esto en el plan actual. */
+export async function fetchIndexCompany(ticker: string): Promise<CompanyInfo> {
+  const clean = ticker.trim().toUpperCase();
+  const json = await getJson<Record<string, SchwabIndexQuote>>(
+    `/marketdata/v1/quotes?symbols=${encodeURIComponent(indexSymbol(clean))}`,
+  );
+  const q = json[indexSymbol(clean)]?.quote ?? {};
+  const ref = json[indexSymbol(clean)]?.reference ?? {};
+  return {
+    ticker: clean,
+    name: ref.description ?? null,
+    exchange: "Index",
+    marketCap: null,
+    homepageUrl: null,
+    employees: null,
+    listDate: null,
+    sector: null,
+    description: null,
+    hasLogo: false,
+    price: q.lastPrice ?? null,
+    change: q.netChange ?? null,
+    changePercent: q.netPercentChange ?? null,
+    dayOpen: q.openPrice ?? null,
+    dayHigh: q.highPrice ?? null,
+    dayLow: q.lowPrice ?? null,
+    dayVolume: null,
+    prevClose: q.closePrice ?? null,
+  };
+}
+
+interface SchwabCandle {
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  datetime: number; // epoch ms
+}
+
+function toDateStr(ms: number): string {
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+async function fetchIndexCandles(
+  ticker: string,
+  params: Record<string, string>,
+): Promise<SchwabCandle[]> {
+  const qs = new URLSearchParams({
+    symbol: indexSymbol(ticker),
+    ...params,
+  });
+  const json = await getJson<{ candles?: SchwabCandle[] }>(
+    `/marketdata/v1/pricehistory?${qs.toString()}`,
+  );
+  return json.candles ?? [];
+}
+
+/** Velas diarias de un índice para la gráfica principal (equivalente a fetchDailyBars). */
+export async function fetchIndexDailyBars(ticker: string, days = 365): Promise<DailyBar[]> {
+  const years = Math.max(1, Math.ceil(days / 365));
+  const candles = await fetchIndexCandles(ticker, {
+    periodType: "year",
+    period: String(years),
+    frequencyType: "daily",
+    frequency: "1",
+  });
+  return candles.map((c) => ({
+    time: toDateStr(c.datetime),
+    open: c.open,
+    high: c.high,
+    low: c.low,
+    close: c.close,
+  }));
+}
+
+/** Velas de un índice (diario o intradía) con tiempo UNIX — equivalente a fetchBars. */
+export async function fetchIndexBars(
+  ticker: string,
+  multiplier: number,
+  timespan: "day" | "minute",
+  days: number,
+): Promise<TfBar[]> {
+  const candles =
+    timespan === "day"
+      ? await fetchIndexCandles(ticker, {
+          periodType: "year",
+          period: String(Math.max(1, Math.ceil(days / 365))),
+          frequencyType: "daily",
+          frequency: "1",
+        })
+      : await fetchIndexCandles(ticker, {
+          periodType: "day",
+          period: String(Math.max(1, days)),
+          frequencyType: "minute",
+          frequency: String(multiplier),
+        });
+  return candles.map((c) => ({
+    time: Math.floor(c.datetime / 1000),
+    open: c.open,
+    high: c.high,
+    low: c.low,
+    close: c.close,
+  }));
 }
 
 function describeStatus(status: number, body: string): string {
