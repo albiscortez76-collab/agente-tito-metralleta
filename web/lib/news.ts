@@ -13,6 +13,8 @@
 //
 // Las funciones de red viven al final; todo lo de arriba es puro y testeable.
 
+import { translateMany } from "./translate";
+
 export type Sentiment = "positive" | "negative" | "neutral";
 export type Bias = "bullish" | "bearish" | "mixed" | "neutral";
 export type FlagKind = "confirm" | "conflict" | "none";
@@ -279,24 +281,34 @@ export async function fetchTickerNews(ticker: string, limit = 12): Promise<NewsI
   if (!res.ok) return [];
   const json = (await res.json()) as { results?: MassiveNews[] };
 
-  const items: NewsItem[] = (json.results ?? [])
-    .filter((r) => r.title && r.article_url)
-    .map((r) => {
-      // Un artículo cubre varios tickers; solo interesa el insight del nuestro.
+  const raw = (json.results ?? []).filter((r) => r.title && r.article_url);
+
+  // Traducir título + razonamiento del sentimiento (vienen en inglés de Massive).
+  // Se traduce antes de cachear para no repetir la llamada en cada búsqueda del ticker.
+  const [titles, reasonings] = await Promise.all([
+    translateMany(raw.map((r) => r.title!)),
+    translateMany(raw.map((r) => {
       const mine = r.insights?.find((i) => i.ticker?.toUpperCase() === clean);
-      const s = mine?.sentiment?.toLowerCase();
-      return {
-        id: r.id ?? r.article_url!,
-        title: r.title!,
-        url: r.article_url!,
-        publisher: r.publisher?.name ?? "—",
-        publishedUtc: r.published_utc ?? new Date().toISOString(),
-        description: r.description ?? null,
-        sentiment: s === "positive" || s === "negative" || s === "neutral" ? s : null,
-        reasoning: mine?.sentiment_reasoning ?? null,
-        layer: "company" as const,
-      };
-    });
+      return mine?.sentiment_reasoning ?? null;
+    })),
+  ]);
+
+  const items: NewsItem[] = raw.map((r, i) => {
+    // Un artículo cubre varios tickers; solo interesa el insight del nuestro.
+    const mine = r.insights?.find((i) => i.ticker?.toUpperCase() === clean);
+    const s = mine?.sentiment?.toLowerCase();
+    return {
+      id: r.id ?? r.article_url!,
+      title: titles[i] ?? r.title!,
+      url: r.article_url!,
+      publisher: r.publisher?.name ?? "—",
+      publishedUtc: r.published_utc ?? new Date().toISOString(),
+      description: r.description ?? null,
+      sentiment: s === "positive" || s === "negative" || s === "neutral" ? s : null,
+      reasoning: reasonings[i] ?? null,
+      layer: "company" as const,
+    };
+  });
 
   tickerCache.set(clean, { at: Date.now(), value: items });
   return items;
@@ -356,6 +368,9 @@ export async function buildNewsReport(
     fetchMacroFeeds().catch(() => []),
   ]);
 
+  // El match de empresa corre sobre el título ORIGINAL en inglés (traducirlo antes
+  // podría alterar el nombre y romper la detección) — se traduce después, solo lo
+  // que de verdad se va a mostrar.
   const aliases = companyAliases(ticker, companyName);
   const promoted: NewsItem[] = [];
   const macro: NewsItem[] = [];
@@ -365,11 +380,18 @@ export async function buildNewsReport(
     else macro.push(it);
   }
 
+  const macroShown = macro.slice(0, 6);
+  const promotedShown = promoted.slice(0, 4);
+  const [macroTitles, promotedTitles] = await Promise.all([
+    translateMany(macroShown.map((it) => it.title)),
+    translateMany(promotedShown.map((it) => it.title)),
+  ]);
+
   return {
     ticker,
     company,
-    macro: macro.slice(0, 6),
-    promoted: promoted.slice(0, 4),
+    macro: macroShown.map((it, i) => ({ ...it, title: macroTitles[i] ?? it.title })),
+    promoted: promotedShown.map((it, i) => ({ ...it, title: promotedTitles[i] ?? it.title })),
     // El sesgo sale solo de la capa de empresa: es la única con sentimiento por ticker.
     bias: newsBias(company, now),
     feedsOk: new Set(macroAll.map((i) => i.publisher)).size,
