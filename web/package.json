@@ -8,7 +8,8 @@
     "start": "next start",
     "test": "vitest run",
     "test:watch": "vitest",
-    "schwab:auth": "node scripts/schwab-auth.mjs"
+    "schwab:auth": "node scripts/schwab-auth.mjs",
+    "fj:monitor": "node scripts/financialjuice-monitor.mjs"
   },
   "dependencies": {
     "lightweight-charts": "^4.2.3",

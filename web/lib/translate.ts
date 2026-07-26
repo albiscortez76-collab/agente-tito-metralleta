@@ -7,9 +7,17 @@ const cache = new Map<string, string>();
 
 interface MyMemoryResponse {
   responseData?: { translatedText?: string };
+  responseStatus?: number | string;
   quotaFinished?: boolean;
 }
 
+/**
+ * Cuando se acaba la cuota gratis, MyMemory responde HTTP 200 pero mete el
+ * aviso de cuota agotada DENTRO de `responseData.translatedText` como si
+ * fuera la traducción — `quotaFinished` sale `null`, no sirve para
+ * detectarlo. La señal confiable es `responseStatus` (dentro del JSON,
+ * no el código HTTP) distinto de 200.
+ */
 async function translateOne(text: string): Promise<string> {
   const trimmed = text.trim();
   if (!trimmed) return text;
@@ -21,8 +29,9 @@ async function translateOne(text: string): Promise<string> {
     const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(6000) });
     if (!res.ok) return text;
     const json = (await res.json()) as MyMemoryResponse;
+    const status = Number(json.responseStatus);
     const translated = json.responseData?.translatedText;
-    if (!translated || json.quotaFinished) return text;
+    if (!translated || (Number.isFinite(status) && status !== 200)) return text;
     cache.set(trimmed, translated);
     return translated;
   } catch {

@@ -27,6 +27,7 @@ import PredictionCard from "./components/PredictionCard";
 import ActivityCard from "./components/ActivityCard";
 import MoneyFlowCard from "./components/MoneyFlowCard";
 import NewsCard from "./components/NewsCard";
+import NewsAlertBanner from "./components/NewsAlertBanner";
 import LevelsCard from "./components/LevelsCard";
 import ProWallsCard from "./components/ProWallsCard";
 import GexHeatmapCard from "./components/GexHeatmapCard";
@@ -181,6 +182,17 @@ export default function Dashboard() {
       calibration: calib,
     });
   }, [gex, horizonDays, aggScore, conviction, unusuality, structure, ivContext, validation, callPct, calib]);
+
+  // Avisa al servidor qué ticker está viendo el estudiante — es el puente que usa
+  // el monitor de Financial Juice (proceso aparte) para saber a quién alertar.
+  useEffect(() => {
+    if (!ticker) return;
+    fetch("/api/active-ticker", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ticker, companyName: company?.name ?? null }),
+    }).catch(() => {});
+  }, [ticker, company?.name]);
 
   // Memoria del agente: guarda la predicción del día (una vez por ticker/sesión). El
   // dedupe por fecha ET vive en el servidor, así que reenviar el mismo día no duplica.
@@ -376,6 +388,8 @@ export default function Dashboard() {
 
         {started && ticker && (
           <>
+            <NewsAlertBanner ticker={ticker} />
+
             <div className="view-toggle-row" style={{ justifyContent: "space-between" }}>
               <div className="view-toggle">
                 <button className={view === "estudiante" ? "active" : ""} onClick={() => setView("estudiante")}>

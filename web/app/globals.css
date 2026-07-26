@@ -311,6 +311,20 @@ html, body {
   border-radius: 12px; padding: 14px 16px; margin-bottom: 20px;
 }
 
+.news-alert-banner {
+  display: flex; align-items: flex-start; gap: 12px;
+  background: var(--amber-bg); border: 1px solid #f5d78e; border-left: 6px solid var(--amber);
+}
+.news-alert-icon { font-size: 22px; line-height: 1; }
+.news-alert-body { flex: 1; min-width: 0; }
+.news-alert-title { font-weight: 700; font-size: 13px; color: var(--amber-text); margin-bottom: 2px; }
+.news-alert-text { font-size: 14px; color: var(--text); }
+.news-alert-close {
+  border: 0; background: transparent; cursor: pointer; color: var(--muted);
+  font-size: 14px; padding: 2px 6px; border-radius: 6px;
+}
+.news-alert-close:hover { background: rgba(0,0,0,0.06); }
+
 .meta { display: flex; flex-wrap: wrap; gap: 18px; margin-bottom: 14px; color: var(--muted); }
 .meta b { color: var(--text); font-variant-numeric: tabular-nums; }
 .warn { color: var(--amber-text); }
