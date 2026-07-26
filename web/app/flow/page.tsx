@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AggressionScore, FlowRow } from "@/lib/flow";
 import { normalizeTicker } from "@/lib/tickers";
 import NavTabs from "@/app/components/NavTabs";
@@ -80,6 +80,8 @@ function ScoreCard({ score }: { score: AggressionScore }) {
 
 const HEADERS = ["Fecha", "Hora", "Contrato", "DTE", "Lado", "Precio", "Bid/Ask", "Tamaño", "Premium", "Δ", "Flags"];
 
+const BIG_ASK_THRESHOLD = 300_000;
+
 export default function FlowPage() {
   const [ticker, setTicker] = useState("");
   const [loading, setLoading] = useState(false);
@@ -88,13 +90,46 @@ export default function FlowPage() {
   const [score, setScore] = useState<AggressionScore | null>(null);
   const [meta, setMeta] = useState<FlowMeta | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [bigAskOnly, setBigAskOnly] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [lastRefreshAt, setLastRefreshAt] = useState<number | null>(null);
   const esRef = useRef<EventSource | null>(null);
+  const activeTickerRef = useRef<string | null>(null);
+  const liveRefreshing = useRef(false);
+
+  const shownRows = bigAskOnly
+    ? (rows ?? []).filter((r) => r.aggression === "ask" && r.premium >= BIG_ASK_THRESHOLD)
+    : rows;
+
+  /** Refresco silencioso: re-pide el mismo ticker sin tocar `steps`/`loading` (sin parpadeo). */
+  function refreshLive() {
+    const t = activeTickerRef.current;
+    if (!t || liveRefreshing.current) return;
+    liveRefreshing.current = true;
+    const es = new EventSource(`/api/flow?ticker=${encodeURIComponent(t)}`);
+    es.onmessage = (ev) => {
+      const data = JSON.parse(ev.data) as FlowEvent;
+      if (data.type === "done") {
+        setRows(data.rows); setScore(data.score); setMeta(data.meta);
+        liveRefreshing.current = false; setLastRefreshAt(Date.now()); es.close();
+      } else if (data.type === "error") { liveRefreshing.current = false; es.close(); }
+    };
+    es.onerror = () => { liveRefreshing.current = false; es.close(); };
+  }
+
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const id = setInterval(refreshLive, 20_000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRefresh]);
 
   function search(e: React.FormEvent) {
     e.preventDefault();
     const t = normalizeTicker(ticker);
     if (!t || loading) return;
     esRef.current?.close();
+    activeTickerRef.current = t;
     setLoading(true);
     setSteps([]); setRows(null); setScore(null); setMeta(null); setError(null);
 
@@ -148,11 +183,25 @@ export default function FlowPage() {
             Transacciones notables · {meta.ticker} · periodo {meta.period}
             <span className="muted"> — {int.format(meta.notableCount)} halladas{meta.shown < meta.notableCount ? `, top ${meta.shown}` : ""}</span>
           </h2>
+          <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", marginBottom: 10 }}>
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer" }}>
+              <input type="checkbox" checked={bigAskOnly} onChange={(e) => setBigAskOnly(e.target.checked)} />
+              Solo compras grandes al ask (≥ {money.format(BIG_ASK_THRESHOLD)})
+              {bigAskOnly && <span className="muted"> — {int.format(shownRows?.length ?? 0)} de {rows.length}</span>}
+            </label>
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer" }}>
+              <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
+              🔄 Auto-actualizar cada 20s
+              {autoRefresh && lastRefreshAt && (
+                <span className="muted">— actualizado {new Date(lastRefreshAt).toLocaleTimeString("es-ES", { hour12: false })}</span>
+              )}
+            </label>
+          </div>
           <div className="tablewrap">
             <table>
               <thead><tr>{HEADERS.map((h) => <th key={h} className={h === "Contrato" || h === "Flags" ? "left" : ""}>{h}</th>)}</tr></thead>
               <tbody>
-                {rows.map((r) => (
+                {(shownRows ?? []).map((r) => (
                   <tr key={r.id}>
                     <td>{dateOf(r.timestamp)}</td>
                     <td>{timeOf(r.timestamp)}</td>

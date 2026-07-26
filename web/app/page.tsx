@@ -94,12 +94,15 @@ export default function Dashboard() {
   // Sesgo histórico (memoria) para auto-corregir los targets, y si ya se leyó.
   const [calib, setCalib] = useState<{ biasPct: number | null; samples: number }>({ biasPct: null, samples: 0 });
   const [calibReady, setCalibReady] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [lastRefreshAt, setLastRefreshAt] = useState<number | null>(null);
 
   const chainEs = useRef<EventSource | null>(null);
   const flowEs = useRef<EventSource | null>(null);
   const chainDoneRef = useRef(true);
   const flowDoneRef = useRef(true);
   const finish = () => { if (chainDoneRef.current && flowDoneRef.current) setBusy(false); };
+  const liveRefreshing = useRef(false);
 
   const top5 = useMemo(() => {
     if (!chainRows) return [];
@@ -354,6 +357,58 @@ export default function Dashboard() {
     f.onerror = () => { flowDoneRef.current = true; finish(); f.close(); };
   }
 
+  /**
+   * Refresco silencioso (auto-refresh): re-pide la cadena + el flujo del ticker
+   * activo SIN pasar por `runSearch` — no toca `steps`/`busy` ni vacía el estado
+   * primero, así el heatmap y el feed se actualizan solos sin el parpadeo de
+   * "cargando" de una búsqueda nueva. No repite validation/prediction/history
+   * (barras e histórico no cambian cada 20s, no vale la pena re-pedirlos).
+   */
+  function refreshLive() {
+    if (!ticker || liveRefreshing.current) return;
+    liveRefreshing.current = true;
+    let chainDone = false;
+    let flowDone = false;
+    const maybeDone = () => {
+      if (chainDone && flowDone) { liveRefreshing.current = false; setLastRefreshAt(Date.now()); }
+    };
+
+    const c = new EventSource(`/api/chain?ticker=${encodeURIComponent(ticker)}`);
+    c.onmessage = (ev) => {
+      const d = JSON.parse(ev.data) as ChainEvent;
+      if (d.type === "company") setCompany(d.company);
+      else if (d.type === "done") {
+        setChainRows(d.rows); setChainMeta(d.meta); setStructure(d.structure ?? null);
+        setChainHistory(d.history ?? []);
+        chainDone = true; maybeDone(); c.close();
+      } else if (d.type === "error") { chainDone = true; maybeDone(); c.close(); }
+    };
+    c.onerror = () => { chainDone = true; maybeDone(); c.close(); };
+
+    const f = new EventSource(`/api/flow?ticker=${encodeURIComponent(ticker)}`);
+    f.onmessage = (ev) => {
+      const d = JSON.parse(ev.data) as FlowEvent;
+      if (d.type === "done") {
+        setNotable(d.rows); setAggScore(d.score);
+        setConviction(d.conviction ?? null);
+        setConvRows(d.convictionRows ?? null);
+        setConvMeta(d.convictionMeta ?? null);
+        setUnusuality(d.unusuality ?? null);
+        setUnusualRows(d.unusualRows ?? null);
+        setIvContext(d.ivContext ?? null);
+        setFlowMeta(d.meta); flowDone = true; maybeDone(); f.close();
+      } else if (d.type === "error") { flowDone = true; maybeDone(); f.close(); }
+    };
+    f.onerror = () => { flowDone = true; maybeDone(); f.close(); };
+  }
+
+  useEffect(() => {
+    if (!ticker || !autoRefresh) return;
+    const id = setInterval(refreshLive, 20_000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticker, autoRefresh]);
+
   const started = steps.length > 0 || company != null || aggScore != null;
 
   // Los promedios de cada sub-agente = las señales del sentiment (y de Prediction Pro).
@@ -399,18 +454,34 @@ export default function Dashboard() {
                   ⚡ Pro
                 </button>
               </div>
-              <div className="view-toggle">
-                <button
-                  className={telegramStatus === "sent" ? "active" : ""}
-                  disabled={!prediction || telegramStatus === "sending"}
-                  onClick={sendTelegramReport}
-                  title="Manda el reporte de este ticker a tu Telegram"
-                >
-                  {telegramStatus === "sending" && "Enviando…"}
-                  {telegramStatus === "sent" && "✅ Enviado"}
-                  {telegramStatus === "error" && "⚠ Error — reintentar"}
-                  {telegramStatus === "idle" && "📤 Enviar a Telegram"}
-                </button>
+              <div className="view-toggle-row" style={{ gap: 10 }}>
+                <div className="view-toggle">
+                  <button
+                    className={autoRefresh ? "active" : ""}
+                    onClick={() => setAutoRefresh((v) => !v)}
+                    title="Actualiza el mapa de calor y el flujo cada 20s, sin recargar la página"
+                  >
+                    {autoRefresh ? "🔄 Auto (20s)" : "⏸ Auto"}
+                  </button>
+                </div>
+                {autoRefresh && lastRefreshAt && (
+                  <span className="muted" style={{ fontSize: 12 }}>
+                    actualizado {new Date(lastRefreshAt).toLocaleTimeString("es-ES", { hour12: false })}
+                  </span>
+                )}
+                <div className="view-toggle">
+                  <button
+                    className={telegramStatus === "sent" ? "active" : ""}
+                    disabled={!prediction || telegramStatus === "sending"}
+                    onClick={sendTelegramReport}
+                    title="Manda el reporte de este ticker a tu Telegram"
+                  >
+                    {telegramStatus === "sending" && "Enviando…"}
+                    {telegramStatus === "sent" && "✅ Enviado"}
+                    {telegramStatus === "error" && "⚠ Error — reintentar"}
+                    {telegramStatus === "idle" && "📤 Enviar a Telegram"}
+                  </button>
+                </div>
               </div>
             </div>
 
