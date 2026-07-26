@@ -12,6 +12,7 @@ import { gexHeatmap, type HeatTrade } from "@/lib/gexHeatmap";
 import { predictPro } from "@/lib/prediction";
 import { findLevels, type ChainLevel, type FlowLevel } from "@/lib/levels";
 import { normalizeTicker } from "@/lib/tickers";
+import { buildTelegramReport } from "@/lib/telegramReport";
 import { int } from "./format";
 import HeaderBar from "./components/HeaderBar";
 import AnalysisLoader from "./components/AnalysisLoader";
@@ -63,6 +64,7 @@ type FlowEvent =
 export default function Dashboard() {
   const [ticker, setTicker] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [telegramStatus, setTelegramStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [steps, setSteps] = useState<string[]>([]);
 
   const [company, setCompany] = useState<CompanyInfo | null>(null);
@@ -247,6 +249,27 @@ export default function Dashboard() {
 
   const addStep = (s: string) => setSteps((p) => (p[p.length - 1] === s ? p : [...p, s]));
 
+  function sendTelegramReport() {
+    if (!ticker || telegramStatus === "sending") return;
+    const text = buildTelegramReport({
+      ticker,
+      price: company?.price ?? chainMeta?.underlyingPrice ?? null,
+      changePercent: company?.changePercent ?? null,
+      regime: gex?.regime ?? null,
+      prediction,
+      levels,
+      sentimentParts: sentimentParts.map((p) => ({ name: p.name, score: p.score })),
+    });
+    setTelegramStatus("sending");
+    fetch("/api/telegram", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    })
+      .then((r) => (r.ok ? setTelegramStatus("sent") : setTelegramStatus("error")))
+      .catch(() => setTelegramStatus("error"));
+  }
+
   function runSearch(t: string) {
     const tk = normalizeTicker(t);
     if (!tk || busy) return;
@@ -353,13 +376,26 @@ export default function Dashboard() {
 
         {started && ticker && (
           <>
-            <div className="view-toggle-row">
+            <div className="view-toggle-row" style={{ justifyContent: "space-between" }}>
               <div className="view-toggle">
                 <button className={view === "estudiante" ? "active" : ""} onClick={() => setView("estudiante")}>
                   👤 Estudiante
                 </button>
                 <button className={view === "pro" ? "active" : ""} onClick={() => setView("pro")}>
                   ⚡ Pro
+                </button>
+              </div>
+              <div className="view-toggle">
+                <button
+                  className={telegramStatus === "sent" ? "active" : ""}
+                  disabled={!prediction || telegramStatus === "sending"}
+                  onClick={sendTelegramReport}
+                  title="Manda el reporte de este ticker a tu Telegram"
+                >
+                  {telegramStatus === "sending" && "Enviando…"}
+                  {telegramStatus === "sent" && "✅ Enviado"}
+                  {telegramStatus === "error" && "⚠ Error — reintentar"}
+                  {telegramStatus === "idle" && "📤 Enviar a Telegram"}
                 </button>
               </div>
             </div>
