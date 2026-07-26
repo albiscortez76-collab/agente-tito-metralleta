@@ -3,11 +3,13 @@ import {
   HAIRCUT,
   MIN_OI,
   WHEEL_PRESETS,
+  applySchwabBidToWheelQuotes,
   liquidityBlock,
   pickPremium,
   spreadPctOf,
   wheelMetrics,
 } from "./wheel";
+import type { SchwabPutQuote } from "./wheel";
 
 describe("WHEEL_PRESETS", () => {
   it("los tres presets van de menos a más delta", () => {
@@ -283,5 +285,43 @@ describe("atmIv", () => {
 
   it("devuelve null sin datos", () => {
     expect(atmIv([], 11.6)).toBeNull();
+  });
+});
+
+describe("applySchwabBidToWheelQuotes", () => {
+  const quotes: ChainQuote[] = [
+    { strike: 55, expiration: "2026-08-28", dte: 33, bid: null, ask: null, lastTrade: 1.2, openInterest: 648 },
+    { strike: 50, expiration: "2026-08-28", dte: 33, bid: null, ask: null, lastTrade: 0.5, openInterest: 300 },
+  ];
+
+  it("sobrescribe bid/ask cuando hay match con bid válido", () => {
+    const schwab: SchwabPutQuote[] = [
+      { strike: 55, expiration: "2026-08-28", bid: 1.1, ask: 1.15 },
+    ];
+    const out = applySchwabBidToWheelQuotes(quotes, schwab);
+    expect(out[0].bid).toBe(1.1);
+    expect(out[0].ask).toBe(1.15);
+    // el que no cruza queda intacto
+    expect(out[1]).toEqual(quotes[1]);
+  });
+
+  it("ignora bids nulos o no positivos", () => {
+    const schwab: SchwabPutQuote[] = [
+      { strike: 55, expiration: "2026-08-28", bid: 0, ask: 1.15 },
+      { strike: 50, expiration: "2026-08-28", bid: null, ask: null },
+    ];
+    expect(applySchwabBidToWheelQuotes(quotes, schwab)).toEqual(quotes);
+  });
+
+  it("no muta el array original", () => {
+    const schwab: SchwabPutQuote[] = [
+      { strike: 55, expiration: "2026-08-28", bid: 1.1, ask: 1.15 },
+    ];
+    applySchwabBidToWheelQuotes(quotes, schwab);
+    expect(quotes[0].bid).toBeNull();
+  });
+
+  it("sin cotizaciones de Schwab devuelve las mismas quotes", () => {
+    expect(applySchwabBidToWheelQuotes(quotes, [])).toBe(quotes);
   });
 });

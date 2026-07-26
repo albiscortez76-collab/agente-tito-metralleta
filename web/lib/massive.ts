@@ -34,6 +34,19 @@ function maxPages(): number {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 40;
 }
 
+/**
+ * Primer valor > 0 de la lista, o null. Fuera de mercado (fin de semana,
+ * antes de la apertura) Massive devuelve `day`/`min` con TODOS sus campos en
+ * 0 literal, no ausentes — `??` no salta de un 0 real a `prevDay`, así que
+ * hay que filtrar explícitamente por positivo.
+ */
+function firstPositive(...values: (number | undefined | null)[]): number | null {
+  for (const v of values) {
+    if (typeof v === "number" && v > 0) return v;
+  }
+  return null;
+}
+
 export interface FetchProgress {
   /** Se llama al terminar cada página, con el número de página y el total acumulado. */
   onPage?: (page: number, accumulated: number) => void | Promise<void>;
@@ -167,14 +180,14 @@ export async function fetchCompany(ticker: string): Promise<CompanyInfo> {
     sector: d.sic_description ?? null,
     description: d.description ?? null,
     hasLogo: Boolean(d.branding?.logo_url || d.branding?.icon_url),
-    price: t.day?.c ?? t.min?.c ?? t.prevDay?.c ?? null,
+    price: firstPositive(t.day?.c, t.min?.c, t.prevDay?.c),
     change: t.todaysChange ?? null,
     changePercent: t.todaysChangePerc ?? null,
-    dayOpen: t.day?.o ?? null,
-    dayHigh: t.day?.h ?? null,
-    dayLow: t.day?.l ?? null,
-    dayVolume: t.day?.v ?? null,
-    prevClose: t.prevDay?.c ?? null,
+    dayOpen: firstPositive(t.day?.o),
+    dayHigh: firstPositive(t.day?.h),
+    dayLow: firstPositive(t.day?.l),
+    dayVolume: firstPositive(t.day?.v),
+    prevClose: firstPositive(t.prevDay?.c),
   };
 }
 
@@ -306,10 +319,20 @@ export async function fetchWheelChain(
     `/v3/snapshot/options/${encodeURIComponent(clean)}` +
     `?contract_type=put&expiration_date.gte=${from}&expiration_date.lte=${to}&limit=250`;
 
-  const json = await getJson<{ results?: WheelRawContract[] }>(path);
+  // Con estos filtros (contract_type + rango de fechas) Massive NUNCA incluye
+  // underlying_asset.price en los contratos (verificado: 0 de 250 en la
+  // práctica) — a diferencia de la cadena sin filtrar que sí lo trae. Hay que
+  // pedir el precio aparte, igual que fetchCompany.
+  const [json, snap] = await Promise.all([
+    getJson<{ results?: WheelRawContract[] }>(path),
+    getJson<{ ticker?: StockSnapshot }>(
+      `/v2/snapshot/locale/us/markets/stocks/tickers/${encodeURIComponent(clean)}`,
+    ).catch(() => null),
+  ]);
   const results = json?.results ?? [];
+  const snapPrice = firstPositive(snap?.ticker?.day?.c, snap?.ticker?.min?.c, snap?.ticker?.prevDay?.c);
 
-  let spot: number | null = null;
+  let spot: number | null = snapPrice;
   const quotes: WheelChainQuote[] = [];
 
   for (const c of results) {

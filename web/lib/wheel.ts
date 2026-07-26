@@ -419,3 +419,39 @@ export function wheelCandidates(input: CandidatesInput): WheelCandidate[] {
     return (b.score?.total ?? 0) - (a.score?.total ?? 0);
   });
 }
+
+// ── BID real de Schwab ─────────────────────────────────────────────────
+
+export interface SchwabPutQuote {
+  strike: number;
+  expiration: string; // YYYY-MM-DD
+  bid: number | null;
+  ask: number | null;
+}
+
+function quoteKey(expiration: string, strike: number): string {
+  return `${expiration}|${strike}`;
+}
+
+/**
+ * Sobrescribe bid/ask con el dato real de Schwab cuando hay match (mismo
+ * vencimiento + strike) y el bid es válido (> 0). Massive no da bid/ask en
+ * el plan actual, así que sin esto TODO candidato sale bloqueado por
+ * "sin_bid" — igual que pasaba en la cadena principal antes de cruzarla con
+ * Schwab (ver applySchwabBid en compute.ts). Pura — fácil de testear.
+ */
+export function applySchwabBidToWheelQuotes(
+  quotes: ChainQuote[],
+  schwabQuotes: SchwabPutQuote[],
+): ChainQuote[] {
+  const byKey = new Map<string, SchwabPutQuote>();
+  for (const q of schwabQuotes) {
+    if (typeof q.bid === "number" && q.bid > 0) byKey.set(quoteKey(q.expiration, q.strike), q);
+  }
+  if (byKey.size === 0) return quotes;
+  return quotes.map((q) => {
+    const match = byKey.get(quoteKey(q.expiration, q.strike));
+    if (!match) return q;
+    return { ...q, bid: match.bid, ask: match.ask ?? q.ask };
+  });
+}

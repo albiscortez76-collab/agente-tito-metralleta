@@ -5,13 +5,14 @@
 // asequibilidad se calcula en el cliente con tito.risk.* de localStorage.
 
 import { fetchWheelChain } from "@/lib/massive";
+import { fetchOptionChain as fetchSchwabChain } from "@/lib/schwab";
 import { cachedDailyBars } from "@/lib/barsStore";
 import { findLevels, type LvlBar } from "@/lib/levels";
 import { realizedVolSeries, rankWithin } from "@/lib/ivcontext";
 import { earningsForTicker } from "@/lib/earnings";
 import {
-  WHEEL_PRESETS, wheelCandidates,
-  type PresetId, type WheelCandidate,
+  WHEEL_PRESETS, wheelCandidates, applySchwabBidToWheelQuotes,
+  type PresetId, type WheelCandidate, type SchwabPutQuote,
 } from "@/lib/wheel";
 import { WHEEL_UNIVERSE } from "@/lib/wheelUniverse";
 import type { WheelSseEvent } from "@/app/wheel/types";
@@ -74,6 +75,20 @@ export async function GET(req: Request) {
             const lvlBars: LvlBar[] = bars.map((b) => ({ time: b.time, high: b.high, low: b.low, close: b.close }));
             const levels = findLevels({ bars: lvlBars, spot: chain.spot, now });
 
+            // BID real de Schwab — Massive no lo da en el plan actual, y sin
+            // bid TODO candidato sale bloqueado por "sin_bid". Es un plus, no
+            // un requisito: si falla, Wheel se queda igual que antes (bloqueado).
+            let quotes = chain.quotes;
+            try {
+              const schwabContracts = await fetchSchwabChain(sym.ticker);
+              const schwabPuts: SchwabPutQuote[] = schwabContracts
+                .filter((c) => c.contractType === "PUT")
+                .map((c) => ({ strike: c.strike, expiration: c.expiration, bid: c.bidPrice, ask: c.askPrice }));
+              quotes = applySchwabBidToWheelQuotes(chain.quotes, schwabPuts);
+            } catch {
+              // sin Schwab, se queda con lo que haya en chain.quotes (probablemente sin bid)
+            }
+
             // IV Rank propio: proxy de volatilidad realizada (no hay serie de IV).
             const rvSeries = realizedVolSeries(bars.map((b) => b.close), 30);
             const currentRv = rvSeries.length > 0 ? rvSeries[rvSeries.length - 1] : null;
@@ -85,14 +100,14 @@ export async function GET(req: Request) {
             // símbolo aquí), así que la confirmación por skew de earningsFlag
             // ("dentro_confirmado") queda pendiente y hoy nunca dispara; ver
             // la nota en lib/earnings.ts (earningsForTicker).
-            const nearExp = chain.quotes.reduce((a, b) => (b.dte < a.dte ? b : a)).expiration;
+            const nearExp = quotes.reduce((a, b) => (b.dte < a.dte ? b : a)).expiration;
             const earnings = await earningsForTicker({
               ticker: sym.ticker, expiration: nearExp, frontSkew: null, now,
             });
 
             const fallbackIv = currentRv != null ? currentRv / 100 : 0.4;
             const cands = wheelCandidates({
-              ticker: sym.ticker, spot: chain.spot, quotes: chain.quotes,
+              ticker: sym.ticker, spot: chain.spot, quotes,
               preset, ivRank, supports: levels.supports, earnings, fallbackIv,
             });
             all.push(...cands);
