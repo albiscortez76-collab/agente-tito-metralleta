@@ -38,6 +38,7 @@ const statePath = path.join(stateDir, "truthsocial-state.json");
 const APP_URL = "http://localhost:3000";
 const ACCOUNT_ID = "107780257626128497"; // @realDonaldTrump
 const POLL_MS = 45_000;
+const MAX_BURST = 5; // tope de alertas por vuelta, para no inundar Telegram si hay backlog
 
 function readEnv() {
   if (!existsSync(envPath)) return {};
@@ -177,16 +178,18 @@ async function postAlert(ticker, headline, headlineOriginal, url) {
   }
 }
 
-/** Extrae el texto de una publicación (o del original si es repost) y su URL. */
+/**
+ * Extrae el texto de una publicación (o del original si es repost) y su URL.
+ * Devuelve null si no hay texto real — Trump republica memes/imágenes sin
+ * caption todo el tiempo, y "(sin texto)" no es un catalizador de nada, solo
+ * ruido en Telegram. Sin texto, no hay nada que traducir ni que alertar.
+ */
 function extractPost(status) {
   const source = status.reblog ?? status;
   const rawText = stripHtml(source.content ?? "");
   const isRepost = Boolean(status.reblog);
-  const hasMedia = Array.isArray(source.media_attachments) && source.media_attachments.length > 0;
-  let text = rawText;
-  if (!text && hasMedia) text = "(publicación con imagen/video, sin texto)";
-  if (!text) return null; // nada que mostrar
-  if (isRepost) text = `(repost) ${text}`;
+  if (!rawText) return null;
+  const text = isRepost ? `(repost) ${rawText}` : rawText;
   return { text, url: status.url ?? source.url };
 }
 
@@ -224,16 +227,24 @@ async function poll() {
   }
 
   const lastId = BigInt(state.lastId);
-  const fresh = statuses
+  let fresh = statuses
     .filter((s) => BigInt(s.id) > lastId)
     .sort((a, b) => (BigInt(a.id) > BigInt(b.id) ? 1 : -1)); // más viejas primero
 
   if (fresh.length === 0) return;
 
+  // Si el monitor estuvo apagado un rato y se acumuló backlog, no revienta
+  // Telegram con una ráfaga entera — solo alerta las MAX_BURST más recientes
+  // (las viejas ya perdieron valor como catalizador del momento).
+  if (fresh.length > MAX_BURST) {
+    console.log(`[ts] ${fresh.length} publicaciones nuevas de golpe (backlog) — alertando solo las últimas ${MAX_BURST}`);
+    fresh = fresh.slice(-MAX_BURST);
+  }
+
   for (const status of fresh) {
     await handleNewStatus(status).catch((err) => console.error("[ts] error procesando publicación:", err.message ?? err));
   }
-  writeState({ lastId: fresh[fresh.length - 1].id });
+  writeState({ lastId: statuses.reduce((max, s) => (BigInt(s.id) > BigInt(max) ? s.id : max), state.lastId) });
 }
 
 console.log("Monitor de Truth Social (@realDonaldTrump) — Ctrl+C para detener.");
