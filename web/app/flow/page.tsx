@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import type { AggressionScore, FlowRow } from "@/lib/flow";
 import { normalizeTicker } from "@/lib/tickers";
+import NavTabs from "@/app/components/NavTabs";
 
 interface StepLine { label: string; detail?: string }
 interface FlowMeta {
@@ -111,6 +112,7 @@ export default function FlowPage() {
   return (
     <main className="wrap">
       <div className="header">
+        <NavTabs standalone />
         <h1>Agresividad · Time &amp; Sales</h1>
         <p>Transacciones notables y score de agresividad (bid/ask) para el scorecard.</p>
       </div>

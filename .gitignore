@@ -30,3 +30,6 @@ next-env.d.ts
 # --- temporales ---
 *.log
 .claude/
+
+# --- artefactos internos del agente (planes/briefs/reports de desarrollo) ---
+.superpowers/

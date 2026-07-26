@@ -1,6 +1,7 @@
 // Cliente de Massive (massive.com — antes Polygon.io). Solo se usa en el servidor.
 
 import type { CompanyInfo, DailyBar, RawContract, TfBar } from "./types";
+import { marketDateStr } from "./occ";
 
 const BASE_URL = "https://api.massive.com";
 
@@ -249,6 +250,92 @@ export async function fetchLogoImage(
   if (!res.ok) return null;
   const contentType = res.headers.get("content-type") ?? "image/png";
   return { data: await res.arrayBuffer(), contentType };
+}
+
+/**
+ * Cadena de PUTS filtrada en el servidor para el screener de Wheel.
+ *
+ * Los filtros (`contract_type`, `expiration_date.gte/lte`, `strike_price.lte`)
+ * los resuelve Massive, así que un ticker cabe en UNA página en vez de exigir
+ * la cadena completa paginada. Verificado el 2026-07-24: 126 contratos, sin
+ * next_url.
+ *
+ * `last_quote` (bid/ask) SÍ viene en este plan; `greeks` e `implied_volatility`
+ * NO — el delta se calcula por Black-Scholes en lib/wheel.ts.
+ */
+export interface WheelChainResult {
+  spot: number | null;
+  quotes: WheelChainQuote[];
+}
+
+export interface WheelChainQuote {
+  strike: number;
+  expiration: string;
+  dte: number;
+  bid: number | null;
+  ask: number | null;
+  lastTrade: number | null;
+  openInterest: number;
+}
+
+interface WheelRawContract {
+  details?: { strike_price?: number; expiration_date?: string; contract_type?: string };
+  last_quote?: { bid?: number; ask?: number };
+  last_trade?: { price?: number };
+  open_interest?: number;
+  underlying_asset?: { price?: number };
+}
+
+export async function fetchWheelChain(
+  ticker: string,
+  opts: { dteMin: number; dteMax: number; now?: Date },
+): Promise<WheelChainResult> {
+  const clean = ticker.trim().toUpperCase();
+  if (!clean) throw new MassiveError("Ticker vacío.");
+  const now = opts.now ?? new Date();
+  const day = 24 * 60 * 60 * 1000;
+  // Ancla "hoy" en el día de mercado ET (no UTC): después de las ~8 PM ET el
+  // día UTC ya saltó al siguiente y el dte/rango de vencimientos saldría
+  // desfasado un día (ver el aviso en marketDateStr, lib/occ.ts).
+  const todayET = marketDateStr(now);
+  const todayETMs = Date.parse(`${todayET}T00:00:00Z`);
+  const from = toDateStr(todayETMs + opts.dteMin * day);
+  const to = toDateStr(todayETMs + opts.dteMax * day);
+
+  const path =
+    `/v3/snapshot/options/${encodeURIComponent(clean)}` +
+    `?contract_type=put&expiration_date.gte=${from}&expiration_date.lte=${to}&limit=250`;
+
+  const json = await getJson<{ results?: WheelRawContract[] }>(path);
+  const results = json?.results ?? [];
+
+  let spot: number | null = null;
+  const quotes: WheelChainQuote[] = [];
+
+  for (const c of results) {
+    const strike = c.details?.strike_price;
+    const expiration = c.details?.expiration_date;
+    if (!(strike != null && strike > 0) || !expiration) continue;
+    if (spot == null && c.underlying_asset?.price) spot = c.underlying_asset.price;
+
+    const dte = Math.round(
+      (Date.parse(`${expiration}T00:00:00Z`) - todayETMs) / day,
+    );
+
+    quotes.push({
+      strike,
+      expiration,
+      dte,
+      bid: c.last_quote?.bid ?? null,
+      ask: c.last_quote?.ask ?? null,
+      lastTrade: c.last_trade?.price ?? null,
+      openInterest: c.open_interest ?? 0,
+    });
+  }
+
+  // Solo puts OTM: los ITM no son cash-secured puts de Wheel, son otra cosa.
+  const otm = spot != null ? quotes.filter((q) => q.strike <= spot) : quotes;
+  return { spot, quotes: otm };
 }
 
 function describeStatus(status: number, ticker: string, body: string): string {

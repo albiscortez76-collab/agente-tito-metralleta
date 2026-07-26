@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { CompanyInfo } from "@/lib/types";
 import { pct, px } from "../format";
+import NavTabs from "./NavTabs";
 
 const QUICK = ["TSLA", "NVDA", "SPY", "AAPL"];
 
@@ -33,6 +34,7 @@ export default function HeaderBar({
         <div className="hb-name">Tito Metralleta</div>
         <div className="hb-chip">AI Options Agent</div>
       </div>
+      <NavTabs />
       <div className="hb-tabs">
         {QUICK.map((s) => (
           <button
@@ -65,7 +67,6 @@ export default function HeaderBar({
             )}
           </>
         )}
-        <a className="hb-link" href="/flow">Time &amp; Sales →</a>
       </div>
     </div>
   );

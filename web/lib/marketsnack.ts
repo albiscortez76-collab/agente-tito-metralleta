@@ -48,6 +48,24 @@ export async function fetchFlow(
 ): Promise<FlowResult> {
   const clean = ticker.trim().toUpperCase();
   if (!clean) throw new MarketSnackError("Ticker vacío.");
+  return paginate(clean, opts);
+}
+
+/**
+ * Igual que `fetchFlow` pero SIN filtro de símbolo: devuelve el flujo de todo el
+ * mercado. Es lo que alimenta el screener de /ideas — el piso de premium
+ * (`minPremium`) filtra server-side, así que el payload se mantiene chico.
+ */
+export async function fetchMarketFlow(opts: FetchFlowOptions = {}): Promise<FlowResult> {
+  return paginate(null, opts);
+}
+
+/** Cuerpo de paginación compartido. `symbol === null` → escaneo de todo el mercado. */
+async function paginate(
+  symbol: string | null,
+  opts: FetchFlowOptions = {},
+): Promise<FlowResult> {
+  const clean = symbol;
   const period = opts.period ?? "5d";
   const maxPages = opts.maxPages ?? 10;
   const cookieHeader = cookie();
@@ -64,7 +82,7 @@ export async function fetchFlow(
     page += 1;
     const params = new URLSearchParams();
     params.set("filter[scope]", "all");
-    params.append("filter[symbol][]", clean);
+    if (clean) params.append("filter[symbol][]", clean);
     params.set("period", period);
     if (opts.minPremium && opts.minPremium > 0) {
       params.set("filter[premium][gte]", String(Math.floor(opts.minPremium)));

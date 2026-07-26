@@ -2,7 +2,7 @@
 
 Sistema **multi-agente de análisis de flujo de opciones** (options flow). Identifica actividad inusual en el mercado de opciones, la interpreta y la convierte en tres escenarios de precio con probabilidad.
 
-![Next.js](https://img.shields.io/badge/Next.js-15-black) ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue) ![Tests](https://img.shields.io/badge/tests-262%20passing-brightgreen)
+![Next.js](https://img.shields.io/badge/Next.js-15-black) ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue) ![Tests](https://img.shields.io/badge/tests-436%20passing-brightgreen)
 
 ## Qué hace
 
@@ -37,12 +37,36 @@ El resumen se escribe en lenguaje llano, por ejemplo:
 - **Noticias en dos capas** — feeds macro (CNBC, Investing.com) + noticias por empresa con sentimiento, y una **bandera de contradicción** cuando el flujo y las noticias apuntan a lados opuestos.
 - **Backtest de validación** — mide cuánto tardó en desarrollarse el movimiento tras cada flow, a favor y en contra.
 
+### Ideas del mercado + panel de riesgo (`/ideas`)
+
+Escanea el flujo de **todo el mercado** (no un solo ticker) y deja solo lo operable: theta sano,
+tiempo suficiente al vencimiento y flujo inusual de verdad. A cada idea le pone **tu techo personal
+de contratos**, calculado con tu tamaño de cuenta y un slider de tolerancia.
+
+El techo es el más estricto de dos límites, y la tabla dice cuál frenó:
+
+| Límite | Presupuesto | Qué protege |
+|---|---|---|
+| Prima | tu tolerancia (1-10% de la cuenta) | la pérdida máxima si expira sin valor |
+| Quema de theta | 5% de la cuenta (banda de Inusualidad) | que el tiempo no te coma la posición |
+
+Cada fila trae el **historial del ticker**: de los flows así que ya vencieron, cuántos acabaron
+moviéndose a favor y en cuántas sesiones. Tu tamaño de cuenta se guarda solo en tu navegador —
+nunca llega al servidor. Si la cadena es ilíquida el sizing se bloquea y explica por qué.
+
+**Watchlist propio.** Marcas una idea con ⭐ y se guarda el contrato entero con la foto del momento
+—spot, precio y el sizing que tenías— para poder juzgar después la decisión, no solo la idea.
+
+**Sincronización con tu broker.** El broker es intercambiable: cada uno declara si acepta contratos
+completos o solo el subyacente. Robinhood tiene MCP oficial desde mayo 2026, pero su Agentic Trading
+está en beta **solo con acciones**, así que hoy se le manda el subyacente (`WULF`) y no el contrato.
+
 ## Stack
 
 - **Next.js 15** (App Router) + TypeScript + React 19
 - CSS plano — sin framework de estilos
 - **TradingView Lightweight Charts** para las velas
-- **vitest** — 262 tests sobre la lógica pura
+- **vitest** — 333 tests sobre la lógica pura
 - Server-Sent Events para el progreso en vivo de cada consulta
 
 ## Fuentes de datos
@@ -68,7 +92,7 @@ Abre <http://localhost:3000>.
 **Schwab (opcional, para BID real):** con `SCHWAB_CLIENT_ID`/`SCHWAB_CLIENT_SECRET` ya en `.env.local`, corre `npm run schwab:auth` — pide abrir una URL de autorización en tu navegador (con tu sesión real de Schwab) y pegar de vuelta la URL de callback. Genera `SCHWAB_REFRESH_TOKEN`. **Caduca cada 7 días** — repite el comando cuando la cadena vuelva a mostrar solo precios proxy de Massive.
 
 ```bash
-npm test          # 299 tests
+npm test          # 436 tests
 npx tsc --noEmit  # typecheck
 ```
 
@@ -86,7 +110,7 @@ npx tsc --noEmit  # typecheck
     └── app/components/   # Paneles del dashboard
 ```
 
-La lógica de negocio vive en `web/lib/` y es pura y testeable: `flow.ts`, `structure.ts`, `ivcontext.ts`, `validation.ts`, `gex.ts`, `gexHeatmap.ts`, `expectedMove.ts`, `prediction.ts`, `levels.ts`, `news.ts`.
+La lógica de negocio vive en `web/lib/` y es pura y testeable: `flow.ts`, `structure.ts`, `ivcontext.ts`, `validation.ts`, `gex.ts`, `gexHeatmap.ts`, `expectedMove.ts`, `prediction.ts`, `levels.ts`, `news.ts`, `risk.ts`, `watchlist.ts`.
 
 ## Reglas de dominio
 

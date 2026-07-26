@@ -14,6 +14,10 @@
 
 import type { Row } from "./types";
 import { daysToExpiration } from "./occ";
+// bsGamma vive en blackScholes.ts (la Wheel usa las mismas primitivas).
+// Se re-exporta para no romper a quien la importa desde aquí.
+import { bsGamma } from "./blackScholes";
+export { bsGamma };
 
 /** IV de respaldo cuando no hay suficientes barras para estimar. */
 export const FALLBACK_IV = 0.4;
@@ -56,19 +60,6 @@ export interface GexAnalysis {
   confidence: number;               // 0-100
   lowLiquidity: boolean;
   n: number;                        // strikes considerados cerca del spot
-}
-
-/** Densidad normal estándar φ(x). */
-function phi(x: number): number {
-  return Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI);
-}
-
-/** Gamma de Black-Scholes (r = 0). Devuelve 0 si los insumos no son válidos. */
-export function bsGamma(spot: number, strike: number, T: number, iv: number): number {
-  if (spot <= 0 || strike <= 0 || T <= 0 || iv <= 0) return 0;
-  const sqrtT = Math.sqrt(T);
-  const d1 = (Math.log(spot / strike) + 0.5 * iv * iv * T) / (iv * sqrtT);
-  return phi(d1) / (spot * iv * sqrtT);
 }
 
 /**
