@@ -1,14 +1,16 @@
-// Alertas de Financial Juice que sí mencionan el ticker activo. En memoria — son
-// avisos del momento, no un archivo histórico. El monitor (proceso aparte) las
-// manda por POST; la app las lee por GET para pintar el banner en pantalla.
+// Alertas para el ticker activo (Financial Juice por mención, o Truth Social
+// por publicación nueva de @realDonaldTrump). En memoria — son avisos del
+// momento, no un archivo histórico. Los monitores (procesos aparte) las
+// mandan por POST; la app las lee por GET para pintar el banner en pantalla.
 
 export interface NewsAlert {
   id: string;
   ticker: string;
   headline: string;
   headlineOriginal: string;
-  source: "financialjuice";
+  source: "financialjuice" | "truthsocial";
   matchedBy: string;
+  url?: string;
   receivedAt: string;
 }
 

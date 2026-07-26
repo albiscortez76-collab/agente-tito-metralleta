@@ -319,6 +319,7 @@ html, body {
 .news-alert-body { flex: 1; min-width: 0; }
 .news-alert-title { font-weight: 700; font-size: 13px; color: var(--amber-text); margin-bottom: 2px; }
 .news-alert-text { font-size: 14px; color: var(--text); }
+.news-alert-link { display: inline-block; margin-top: 4px; font-size: 12px; color: var(--amber-text); text-decoration: underline; }
 .news-alert-close {
   border: 0; background: transparent; cursor: pointer; color: var(--muted);
   font-size: 14px; padding: 2px 6px; border-radius: 6px;

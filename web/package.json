@@ -9,7 +9,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "schwab:auth": "node scripts/schwab-auth.mjs",
-    "fj:monitor": "node scripts/financialjuice-monitor.mjs"
+    "fj:monitor": "node scripts/financialjuice-monitor.mjs",
+    "ts:monitor": "node scripts/truthsocial-monitor.mjs"
   },
   "dependencies": {
     "lightweight-charts": "^4.2.3",

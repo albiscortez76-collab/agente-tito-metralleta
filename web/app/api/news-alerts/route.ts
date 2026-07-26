@@ -1,8 +1,11 @@
-// GET  /api/news-alerts?ticker=XXX&since=ISO  → alertas nuevas de Financial Juice para ese ticker
-// POST /api/news-alerts  { ticker, headline, headlineOriginal, matchedBy }  → la agrega
+// GET  /api/news-alerts?ticker=XXX&since=ISO  → alertas nuevas para ese ticker
+// POST /api/news-alerts  { ticker, headline, headlineOriginal, matchedBy, source?, url? }  → la agrega
 //
-// El monitor (proceso aparte) hace POST cuando un titular de Financial Juice
-// menciona al ticker activo; la app hace GET cada pocos segundos para el banner.
+// Dos monitores (procesos aparte) hacen POST aquí: financialjuice-monitor.mjs
+// cuando un titular menciona al ticker activo, y truthsocial-monitor.mjs con
+// cada publicación nueva de @realDonaldTrump (etiquetada al ticker activo del
+// momento, sin filtrar por mención — es un catalizador de mercado en general).
+// La app hace GET cada pocos segundos para el banner.
 
 import { addAlert, getAlerts } from "@/lib/newsAlerts";
 
@@ -19,7 +22,14 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as
-    | { ticker?: string; headline?: string; headlineOriginal?: string; matchedBy?: string }
+    | {
+        ticker?: string;
+        headline?: string;
+        headlineOriginal?: string;
+        matchedBy?: string;
+        source?: "financialjuice" | "truthsocial";
+        url?: string;
+      }
     | null;
   if (!body?.ticker || !body.headline) {
     return Response.json({ error: "Faltan datos de la alerta." }, { status: 400 });
@@ -28,8 +38,9 @@ export async function POST(request: Request) {
     ticker: body.ticker,
     headline: body.headline,
     headlineOriginal: body.headlineOriginal ?? body.headline,
-    source: "financialjuice",
+    source: body.source ?? "financialjuice",
     matchedBy: body.matchedBy ?? body.ticker,
+    url: body.url,
   });
   return Response.json(alert);
 }
