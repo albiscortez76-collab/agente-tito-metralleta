@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 // Monitor de Financial Juice — corre aparte, todo el día, mientras operas.
 //
-// Se conecta al WebSocket de Financial Juice (plan gratis: 10 min de delay),
-// y cuando un titular menciona el ticker que tienes abierto en Tito Metralleta
-// (lo pregunta por HTTP a la app, que debe estar corriendo en localhost:3000):
+// Se conecta al WebSocket de Financial Juice (plan gratis: 10 min de delay).
+// CADA titular que llega se guarda en el feed de Noticias de la app (capa
+// "Financial Juice", junto a CNBC/Investing.com — lib/financialJuiceFeed.ts).
+// Además, si el titular menciona el ticker que tienes abierto en Tito
+// Metralleta (lo pregunta por HTTP a la app, que debe estar corriendo en
+// localhost:3000):
 //   1. Lo traduce al español (MyMemory, igual que lib/translate.ts).
 //   2. Te manda un mensaje de Telegram al instante.
 //   3. Se lo avisa a la app para que salga el banner en pantalla.
@@ -145,15 +148,33 @@ async function postAlert(ticker, headline, headlineOriginal, matchedBy) {
   }
 }
 
+/** Guarda CUALQUIER titular en el feed de Noticias (mencione o no el ticker activo). */
+async function postFeedItem(title, url) {
+  try {
+    await fetch(`${APP_URL}/api/financial-juice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, url }),
+    });
+  } catch (err) {
+    console.error("[fj] error guardando en el feed de Noticias:", err.message ?? err);
+  }
+}
+
 async function handleNews(data) {
   const headlineOriginal = extractHeadline(data);
   if (!headlineOriginal) {
     console.log("[fj] mensaje de noticia sin headline reconocible, JSON crudo:", JSON.stringify(data).slice(0, 500));
     return;
   }
+  const url = data && typeof data === "object" ? (data.url ?? data.link ?? null) : null;
+
+  // Siempre al feed de Noticias (capa "Financial Juice", junto a CNBC/Investing.com) —
+  // esto es independiente de si menciona o no el ticker que tienes abierto ahora mismo.
+  postFeedItem(headlineOriginal, url).catch(() => {});
 
   const active = await getActiveTicker();
-  if (!active) return; // sin ticker activo (o la app apagada) — nada que hacer
+  if (!active) return; // sin ticker activo (o la app apagada) — nada más que hacer
 
   const aliases = companyAliases(active.ticker, active.companyName);
   const hit = mentionsCompany(headlineOriginal, aliases);

@@ -1,9 +1,12 @@
 // Tarea 7 del Proceso Principal — monitoreo de noticias.
 //
 // Dos capas, porque ninguna sola alcanza:
-//   1. MACRO  — los feeds RSS de RSS Feed.md (CNBC + Investing.com). Son feeds
-//      generales de mercado: mueven a todos los tickers por igual (Fed, tarifas,
-//      inflación). Se cachean porque el resultado es idéntico para cada búsqueda.
+//   1. MACRO  — los feeds RSS de RSS Feed.md (CNBC + Investing.com) + los
+//      titulares de Financial Juice acumulados en memoria (financialJuiceFeed.ts,
+//      alimentados por scripts/financialjuice-monitor.mjs). Son feeds generales
+//      de mercado: mueven a todos los tickers por igual (Fed, tarifas, inflación).
+//      Los RSS se cachean porque el resultado es idéntico para cada búsqueda;
+//      Financial Juice no, ya está fresco en memoria.
 //   2. EMPRESA — noticias del ticker desde Massive, que además trae sentimiento
 //      por ticker con su razonamiento.
 //
@@ -14,6 +17,7 @@
 // Las funciones de red viven al final; todo lo de arriba es puro y testeable.
 
 import { translateMany } from "./translate";
+import { getFjHeadlines } from "./financialJuiceFeed";
 
 export type Sentiment = "positive" | "negative" | "neutral";
 export type Bias = "bullish" | "bearish" | "mixed" | "neutral";
@@ -346,6 +350,21 @@ export async function fetchMacroFeeds(): Promise<NewsItem[]> {
   return items;
 }
 
+/** Titulares de Financial Juice (en memoria) como capa macro más — mismo formato que las RSS. */
+function fjHeadlinesAsNewsItems(): NewsItem[] {
+  return getFjHeadlines().map((h) => ({
+    id: h.id,
+    title: h.title,
+    url: h.url ?? "https://stream.financialjuice.com",
+    publisher: "Financial Juice",
+    publishedUtc: h.receivedAt,
+    description: null,
+    sentiment: null,
+    reasoning: null,
+    layer: "macro",
+  }));
+}
+
 export interface NewsReport {
   ticker: string;
   company: NewsItem[];
@@ -363,10 +382,17 @@ export async function buildNewsReport(
   companyName: string | null,
   now: Date,
 ): Promise<NewsReport> {
-  const [company, macroAll] = await Promise.all([
+  const [company, macroFeeds] = await Promise.all([
     fetchTickerNews(ticker).catch(() => []),
     fetchMacroFeeds().catch(() => []),
   ]);
+
+  // Financial Juice no se cachea con los RSS (es en memoria, ya está fresco) —
+  // se mezcla aparte y se reordena por fecha.
+  const seenUrl = new Set<string>();
+  const macroAll = [...fjHeadlinesAsNewsItems(), ...macroFeeds]
+    .filter((it) => (seenUrl.has(it.url) ? false : (seenUrl.add(it.url), true)))
+    .sort((a, b) => b.publishedUtc.localeCompare(a.publishedUtc));
 
   // El match de empresa corre sobre el título ORIGINAL en inglés (traducirlo antes
   // podría alterar el nombre y romper la detección) — se traduce después, solo lo
@@ -394,7 +420,7 @@ export async function buildNewsReport(
     promoted: promotedShown.map((it, i) => ({ ...it, title: promotedTitles[i] ?? it.title })),
     // El sesgo sale solo de la capa de empresa: es la única con sentimiento por ticker.
     bias: newsBias(company, now),
-    feedsOk: new Set(macroAll.map((i) => i.publisher)).size,
+    feedsOk: new Set(macroFeeds.map((i) => i.publisher)).size,
     feedsTotal: MACRO_FEEDS.length,
   };
 }
