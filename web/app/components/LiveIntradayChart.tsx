@@ -4,20 +4,23 @@ import { useEffect, useRef, useState } from "react";
 import type { TfBar } from "@/lib/types";
 import type { LevelsReport } from "@/lib/levels";
 import type { GexAnalysis } from "@/lib/gex";
+import { resampleBars } from "@/lib/resampleBars";
 import { px } from "../format";
 
 const MIN_STRENGTH = 35; // mismo umbral que las líneas punteadas de ProWallsCard
 
-// 1 y 2 min usan streaming real (CHART_EQUITY de Schwab, push por WebSocket — sin
-// sondeo). El resto sigue por REST con sondeo: a esa escala el precio no cambia
-// lo bastante rápido como para que valga la pena mantener una conexión en vivo.
-const TIMEFRAMES: { key: string; label: string; live: boolean; pollMs?: number }[] = [
-  { key: "1m2d", label: "1 min", live: true },
-  { key: "2m2d", label: "2 min", live: true },
-  { key: "5m5d", label: "5 min", live: false, pollMs: 15_000 },
-  { key: "15m10d", label: "15 min", live: false, pollMs: 20_000 },
-  { key: "60m20d", label: "1 hora", live: false, pollMs: 30_000 },
-  { key: "240m60d", label: "4 horas", live: false, pollMs: 60_000 },
+// 1/2/5/15 min corren con streaming real: el único push nativo de Schwab
+// (CHART_EQUITY) es de 1 min, así que las demás se arman agrupando esos ticks
+// en buckets de bucketSec — mismo mecanismo, solo cambia el tamaño del bucket.
+// 1h/4h se quedan por sondeo REST: a esa escala mantener el WebSocket abierto
+// no aporta nada que el sondeo cada 30-60s no dé igual de bien.
+const TIMEFRAMES: { key: string; label: string; bucketSec?: number; pollMs?: number }[] = [
+  { key: "1m2d", label: "1 min", bucketSec: 60 },
+  { key: "2m2d", label: "2 min", bucketSec: 120 },
+  { key: "5m5d", label: "5 min", bucketSec: 300 },
+  { key: "15m10d", label: "15 min", bucketSec: 900 },
+  { key: "60m20d", label: "1 hora", pollMs: 30_000 },
+  { key: "240m60d", label: "4 horas", pollMs: 60_000 },
 ];
 
 type Bar = { time: number; open: number; high: number; low: number; close: number };
@@ -30,12 +33,11 @@ type CandleSeries = {
 };
 
 /**
- * Velas intradía con los soportes/resistencias automáticos (lib/levels.ts)
+ * Velas intradía con los soportes/resistencias y muros de gamma automáticos
  * pintados encima — para ver el precio acercarse a un nivel sin dibujar nada a
- * mano. 1 y 2 min corren con streaming real de Schwab (CHART_EQUITY, push por
- * WebSocket vía /api/chart-stream); el resto por sondeo REST a intervalos
- * cortos (el dato en sí es tan fresco como lo entregue Massive/Schwab — el
- * intervalo aquí es solo cada cuánto se vuelve a preguntar).
+ * mano. 1/2/5/15 min corren con streaming real de Schwab (CHART_EQUITY, push
+ * por WebSocket vía /api/chart-stream, agrupado en el cliente al tamaño de
+ * bucket elegido); 1h/4h por sondeo REST.
  */
 export default function LiveIntradayChart({
   ticker,
@@ -49,7 +51,7 @@ export default function LiveIntradayChart({
   const chartElRef = useRef<HTMLDivElement>(null);
   const seriesRef = useRef<CandleSeries | null>(null);
   const priceLinesRef = useRef<PriceLine[]>([]);
-  const bucketRef = useRef<Bar | null>(null); // vela en formación (para el modo 2min)
+  const bucketRef = useRef<Bar | null>(null); // vela en formación (streaming)
 
   const [tf, setTf] = useState("5m5d");
   const [bars, setBars] = useState<TfBar[] | null>(null);
@@ -59,6 +61,7 @@ export default function LiveIntradayChart({
   const [error, setError] = useState<string | null>(null);
 
   const cfg = TIMEFRAMES.find((t) => t.key === tf) ?? TIMEFRAMES[2];
+  const live = cfg.bucketSec != null;
 
   // ── Crea el chart UNA vez por ticker+tf (no en cada tick, para no parpadear) ──
   useEffect(() => {
@@ -106,11 +109,11 @@ export default function LiveIntradayChart({
     seriesRef.current.setData(bars);
   }, [ready, bars]);
 
-  // ── Soportes/resistencias como líneas horizontales (se redibujan si cambian) ──
+  // ── Soportes/resistencias + muros de gamma como líneas horizontales ──
   useEffect(() => {
     if (!ready || !seriesRef.current) return;
-    // `levels` se recalcula cada 20s con el auto-refresco (sin recrear el chart),
-    // así que hay que quitar las líneas viejas o se van acumulando encimadas.
+    // `levels`/`gex` se recalculan cada 20s con el auto-refresco (sin recrear
+    // el chart), así que hay que quitar las líneas viejas o se acumulan.
     for (const line of priceLinesRef.current) seriesRef.current.removePriceLine(line);
     priceLinesRef.current = [];
     for (const l of levels?.resistances ?? []) {
@@ -132,9 +135,8 @@ export default function LiveIntradayChart({
       );
     }
 
-    // Call wall / put wall / zero gamma — dinámicos: se mueven solos cada 20s
-    // según entra open interest y flujo nuevo (misma lógica de lib/gex.ts que
-    // ya usa el heatmap y Strike Walls, no es un cálculo aparte).
+    // Call wall / put wall / zero gamma — dinámicos: reusan lib/gex.ts (misma
+    // fuente que el heatmap y Strike Walls), se mueven solos con cada refresco.
     const callWall = (gex?.nodes ?? [])
       .filter((n) => n.side === "call")
       .sort((a, b) => b.netGex - a.netGex)[0] ?? null;
@@ -169,7 +171,7 @@ export default function LiveIntradayChart({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, levels, gex]);
 
-  // ── Histórico inicial + datos en vivo (streaming o sondeo, según la temporalidad) ──
+  // ── Histórico inicial + datos en vivo (streaming agrupado o sondeo REST) ──
   useEffect(() => {
     let cancelled = false;
     let pollId: ReturnType<typeof setInterval> | null = null;
@@ -180,39 +182,36 @@ export default function LiveIntradayChart({
     setBars(null);
     setLastUpdate(null);
 
-    // Histórico: siempre por REST (los streams de Schwab no dan backfill).
-    const backfillTf = cfg.live ? "1m2d" : tf;
-    fetch(`/api/bars?ticker=${encodeURIComponent(ticker)}&tf=${backfillTf}`)
-      .then((r) => r.json())
-      .then((d) => {
-        if (cancelled) return;
-        setBars(Array.isArray(d.bars) ? d.bars : []);
-        setLastUpdate(Date.now());
-      })
-      .catch(() => { if (!cancelled) setBars([]); });
+    if (live) {
+      const bucketSec = cfg.bucketSec!;
+      // Histórico: siempre 1-min nativo (los streams de Schwab no dan backfill),
+      // agrupado al mismo tamaño de bucket que se va a mostrar en vivo.
+      fetch(`/api/bars?ticker=${encodeURIComponent(ticker)}&tf=1m2d`)
+        .then((r) => r.json())
+        .then((d) => {
+          if (cancelled) return;
+          const raw: TfBar[] = Array.isArray(d.bars) ? d.bars : [];
+          setBars(resampleBars(raw, Math.max(1, Math.round(bucketSec / 60))));
+          setLastUpdate(Date.now());
+        })
+        .catch(() => { if (!cancelled) setBars([]); });
 
-    if (cfg.live) {
       es = new EventSource(`/api/chart-stream?ticker=${encodeURIComponent(ticker)}`);
       es.addEventListener("bar", (ev) => {
         if (cancelled) return;
         const b = JSON.parse((ev as MessageEvent).data) as Bar;
         setLiveOk(true);
         setLastUpdate(Date.now());
-        if (tf === "1m2d") {
-          seriesRef.current?.update(b);
-          setBars((prev) => appendOrReplace(prev, b));
-        } else {
-          // 2 min: agrupa dos velas de 1 min consecutivas en un solo bucket.
-          const bucketTime = Math.floor(b.time / 120) * 120;
-          const cur = bucketRef.current;
-          const next: Bar =
-            cur && cur.time === bucketTime
-              ? { time: cur.time, open: cur.open, high: Math.max(cur.high, b.high), low: Math.min(cur.low, b.low), close: b.close }
-              : { time: bucketTime, open: b.open, high: b.high, low: b.low, close: b.close };
-          bucketRef.current = next;
-          seriesRef.current?.update(next);
-          setBars((prev) => appendOrReplace(prev, next));
-        }
+
+        const bucketTime = Math.floor(b.time / bucketSec) * bucketSec;
+        const cur = bucketRef.current;
+        const next: Bar =
+          cur && cur.time === bucketTime
+            ? { time: cur.time, open: cur.open, high: Math.max(cur.high, b.high), low: Math.min(cur.low, b.low), close: b.close }
+            : { time: bucketTime, open: b.open, high: b.high, low: b.low, close: b.close };
+        bucketRef.current = next;
+        seriesRef.current?.update(next);
+        setBars((prev) => appendOrReplace(prev, next));
       });
       es.addEventListener("error", () => { if (!cancelled) setLiveOk(false); });
       es.addEventListener("message", (ev) => {
@@ -223,6 +222,11 @@ export default function LiveIntradayChart({
         } catch { /* frames sin JSON, ignorar */ }
       });
     } else {
+      fetch(`/api/bars?ticker=${encodeURIComponent(ticker)}&tf=${tf}`)
+        .then((r) => r.json())
+        .then((d) => { if (!cancelled) { setBars(Array.isArray(d.bars) ? d.bars : []); setLastUpdate(Date.now()); } })
+        .catch(() => { if (!cancelled) setBars([]); });
+
       const load = () => {
         fetch(`/api/bars?ticker=${encodeURIComponent(ticker)}&tf=${tf}`)
           .then((r) => r.json())
@@ -241,14 +245,14 @@ export default function LiveIntradayChart({
       if (pollId) clearInterval(pollId);
       es?.close();
     };
-  }, [ticker, tf, cfg.live, cfg.pollMs]);
+  }, [ticker, tf, live, cfg.bucketSec, cfg.pollMs]);
 
   return (
     <section className="card">
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
         <div className="card-title">
           Intradía en vivo · {ticker}
-          {cfg.live && <span className={`pill ${liveOk ? "call" : "put"}`} style={{ marginLeft: 8, fontSize: 10 }}>{liveOk ? "● EN VIVO" : "conectando…"}</span>}
+          {live && <span className={`pill ${liveOk ? "call" : "put"}`} style={{ marginLeft: 8, fontSize: 10 }}>{liveOk ? "● EN VIVO" : "conectando…"}</span>}
         </div>
         <div className="view-toggle">
           {TIMEFRAMES.map((t) => (
@@ -259,7 +263,7 @@ export default function LiveIntradayChart({
         </div>
       </div>
       <div className="card-sub">
-        {cfg.live
+        {live
           ? "Streaming real (Schwab CHART_EQUITY, push por WebSocket) — sin sondeo."
           : `Se actualiza sola cada ${Math.round((cfg.pollMs ?? 20_000) / 1000)}s.`}
         {" "}Todas las líneas son automáticas y se mueven solas según cambia la cadena de opciones.
