@@ -32,6 +32,7 @@ import LevelsCard from "./components/LevelsCard";
 import ProWallsCard from "./components/ProWallsCard";
 import LiveIntradayChart from "./components/LiveIntradayChart";
 import GexHeatmapCard from "./components/GexHeatmapCard";
+import GexChangeTable from "./components/GexChangeTable";
 import TradesFeed from "./components/TradesFeed";
 import CompanyHeader from "./components/CompanyHeader";
 import ScorecardPanel from "./components/ScorecardPanel";
@@ -558,9 +559,16 @@ export default function Dashboard() {
 
             {structure && <ProWallsCard ticker={ticker} structure={structure} gex={gex} horizonDays={horizonDays} levels={levels} />}
 
-            <LiveIntradayChart ticker={ticker} levels={levels} gex={gex} />
+            {heatmap && heatmap.cells.length > 0 ? (
+              <div className="grid-2">
+                <LiveIntradayChart ticker={ticker} levels={levels} gex={gex} />
+                <GexHeatmapCard h={heatmap} />
+              </div>
+            ) : (
+              <LiveIntradayChart ticker={ticker} levels={levels} gex={gex} />
+            )}
 
-            {heatmap && heatmap.cells.length > 0 && <GexHeatmapCard h={heatmap} />}
+            <GexChangeTable ticker={ticker} gex={gex} />
 
             {unusualRows && <TradesFeed rows={unusualRows} />}
 
