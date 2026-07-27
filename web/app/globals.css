@@ -586,7 +586,7 @@ tfoot .totals td {
 .wall-stat-sub { font-size: 11px; color: #5c6a85; margin-top: 2px; }
 
 /* GEX Heatmap por strike × vencimiento */
-.heat-scroll { overflow: auto; margin-top: 14px; max-height: 520px; position: relative; }
+.heat-scroll { overflow: auto; margin-top: 14px; max-height: 460px; position: relative; }
 .heat-grid { display: grid; gap: 1px; min-width: 620px; font-variant-numeric: tabular-nums; }
 .heat-corner, .heat-colhead { font-size: 10px; color: #8593ad; padding: 6px 8px; text-align: center;
   position: sticky; top: 0; background: #0e1420; z-index: 2; }

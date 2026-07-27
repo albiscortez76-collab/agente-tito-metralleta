@@ -560,7 +560,7 @@ export default function Dashboard() {
             {structure && <ProWallsCard ticker={ticker} structure={structure} gex={gex} horizonDays={horizonDays} levels={levels} />}
 
             {heatmap && heatmap.cells.length > 0 ? (
-              <div className="grid-2">
+              <div className="grid-2" style={{ gridTemplateColumns: "2.2fr 1fr" }}>
                 <LiveIntradayChart ticker={ticker} levels={levels} gex={gex} />
                 <GexHeatmapCard h={heatmap} />
               </div>

@@ -86,7 +86,7 @@ export default function LiveIntradayChart({
         grid: { vertLines: { visible: false }, horzLines: { color: "#26304228" } },
         rightPriceScale: { borderColor: "#26304260" },
         timeScale: { borderColor: "#26304260", timeVisible: true, secondsVisible: false },
-        height: 320,
+        height: 460,
         autoSize: true,
       });
       const candles = chart.addCandlestickSeries({
@@ -291,7 +291,7 @@ export default function LiveIntradayChart({
       {error && <div className="feed-empty">⚠ {error}</div>}
       {!bars && <div className="feed-empty">Cargando velas…</div>}
       {bars && bars.length === 0 && <div className="feed-empty">Sin datos intradía para {ticker}.</div>}
-      <div ref={chartElRef} style={{ height: 320, display: bars && bars.length > 0 ? "block" : "none" }} />
+      <div ref={chartElRef} style={{ height: "clamp(380px, 48vh, 560px)", display: bars && bars.length > 0 ? "block" : "none" }} />
     </section>
   );
 }

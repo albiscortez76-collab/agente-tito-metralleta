@@ -69,29 +69,40 @@ export interface BidQuote {
   expiration: string;
   strike: number;
   bid: number | null;
+  /** Gamma real del contrato (Schwab) — independiente del bid: un OTM puede tener
+   * bid inválido pero gamma real igual de válida. */
+  gamma?: number | null;
 }
 
 /**
  * Sobrescribe el precio de las filas con el BID real de Schwab cuando hay match
- * (mismo tipo + vencimiento + strike) y el bid es válido (> 0). Las que no
- * cruzan se quedan con el proxy de Massive tal cual. Pura — fácil de testear.
+ * (mismo tipo + vencimiento + strike) y el bid es válido (> 0), y por separado
+ * mete la gamma real cuando también viene válida (> 0) — bid y gamma se aplican
+ * de forma independiente, no todo o nada. Las que no cruzan ninguno de los dos
+ * se quedan con el proxy de Massive tal cual. Pura — fácil de testear.
  */
 export function applySchwabBid(rows: Row[], quotes: BidQuote[]): Row[] {
-  const byKey = new Map<string, number>();
+  const byKey = new Map<string, BidQuote>();
   for (const q of quotes) {
-    if (typeof q.bid === "number" && q.bid > 0) {
-      byKey.set(contractKey(q.contractType, q.expiration, q.strike), q.bid);
+    const validBid = typeof q.bid === "number" && q.bid > 0;
+    const validGamma = typeof q.gamma === "number" && q.gamma > 0;
+    if (validBid || validGamma) {
+      byKey.set(contractKey(q.contractType, q.expiration, q.strike), q);
     }
   }
   if (byKey.size === 0) return rows;
   return rows.map((row) => {
-    const bid = byKey.get(contractKey(row.contractType, row.expiration, row.strike));
-    if (bid === undefined) return row;
+    const q = byKey.get(contractKey(row.contractType, row.expiration, row.strike));
+    if (!q) return row;
+    const validBid = typeof q.bid === "number" && q.bid > 0;
+    const validGamma = typeof q.gamma === "number" && q.gamma > 0;
+    if (!validBid && !validGamma) return row;
     return {
       ...row,
-      price: bid,
-      priceSource: "schwab_bid",
-      openPremium: openPremium(row.openInterest, bid),
+      ...(validBid
+        ? { price: q.bid as number, priceSource: "schwab_bid" as const, openPremium: openPremium(row.openInterest, q.bid as number) }
+        : {}),
+      ...(validGamma ? { gamma: q.gamma as number } : {}),
     };
   });
 }

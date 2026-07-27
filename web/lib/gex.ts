@@ -6,8 +6,10 @@
 //
 // Massive no entrega gamma ni IV en este plan, así que:
 //  · la IV se estima de la volatilidad realizada del subyacente (barras diarias)
-//  · la gamma se calcula con Black-Scholes por contrato
-//  · donde hay gamma real de MarketSnack, se ancla la estimada contra la real
+//  · si Schwab dio la gamma REAL del contrato (r.gamma, cruzada en applySchwabBid
+//    vía /api/chain), esa manda siempre — es la del mercado, no una estimación
+//  · si no (contrato fuera de la ventana de strikes de Schwab), se calcula con
+//    Black-Scholes, y si hay gamma real de MarketSnack, se ancla contra esa
 //
 // Funciones puras y testeables (lib/gex.test.ts). Términos neutros a propósito.
 // ============================================================================
@@ -131,9 +133,17 @@ export function gexAnalysis(input: GexInput): GexAnalysis {
     if (dte <= 0) continue;
     const T = dte / 365;
 
-    let gamma = bsGamma(spot, r.strike, T, iv);
-    const anchor = realGamma.get(`${r.strike}|${r.contractType}`);
-    if (anchor && anchor.n > 0) gamma = (gamma + anchor.sum / anchor.n) / 2;
+    // Gamma REAL de Schwab (per-contrato, ya viene del mercado) manda sobre
+    // cualquier estimación — solo se estima con Black-Scholes cuando el
+    // contrato quedó fuera de la ventana de strikes de Schwab.
+    let gamma: number;
+    if (typeof r.gamma === "number" && r.gamma > 0) {
+      gamma = r.gamma;
+    } else {
+      gamma = bsGamma(spot, r.strike, T, iv);
+      const anchor = realGamma.get(`${r.strike}|${r.contractType}`);
+      if (anchor && anchor.n > 0) gamma = (gamma + anchor.sum / anchor.n) / 2;
+    }
 
     const gex = gamma * r.openInterest * 100 * spot * spot * 0.01;
     const s = byStrike.get(r.strike) ?? { callGex: 0, putGex: 0 };

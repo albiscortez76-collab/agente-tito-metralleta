@@ -78,6 +78,7 @@ export async function GET(request: Request) {
             expiration: c.expiration,
             strike: c.strike,
             bid: c.bidPrice,
+            gamma: c.gamma,
           }));
           rows = applySchwabBid(rows, quotes);
         } catch {

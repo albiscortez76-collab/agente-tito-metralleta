@@ -83,6 +83,24 @@ describe("gexAnalysis", () => {
     expect(a.direction).toBe("flat");
   });
 
+  it("usa la gamma real del contrato (Schwab) en vez de estimarla con Black-Scholes", () => {
+    const r = row(100, "call", 1000);
+    r.gamma = 0.05;
+    const a = analyze([r]);
+    const expectedGex = 0.05 * 1000 * 100 * 100 * 100 * 0.01; // gamma·OI·100·spot²·0.01
+    expect(a.nodes[0].netGex).toBeCloseTo(expectedGex, 0);
+  });
+
+  it("ignora una gamma real inválida (0 o negativa) y cae a la estimación", () => {
+    const withReal = row(100, "call", 1000);
+    withReal.gamma = 0.05;
+    const withoutReal = row(100, "call", 1000);
+    withoutReal.gamma = 0;
+    const a = analyze([withoutReal]);
+    // sin gamma real válida, el resultado no debe coincidir con el de la gamma real explícita de arriba
+    expect(a.nodes[0].netGex).not.toBeCloseTo(analyze([withReal]).nodes[0].netGex, 0);
+  });
+
   it("ignora strikes lejanos (fuera de ±20%) y OI cero / expirados", () => {
     const a = analyze([
       row(100, "call", 1000),

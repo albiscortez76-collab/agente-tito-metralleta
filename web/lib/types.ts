@@ -42,6 +42,8 @@ export interface Row {
   priceSource: PriceSource;
   openPremium: number | null;
   notionalValue: number;
+  /** Gamma real del contrato (Schwab) cuando hay match — null si toca estimarla (Black-Scholes). */
+  gamma?: number | null;
 }
 
 export interface ChainMeta {

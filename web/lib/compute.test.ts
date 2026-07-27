@@ -164,6 +164,36 @@ describe("applySchwabBid", () => {
   it("sin cotizaciones devuelve las filas tal cual", () => {
     expect(applySchwabBid(rows, [])).toBe(rows);
   });
+
+  it("mete la gamma real aunque el bid no sea válido (OTM con bid 0)", () => {
+    const quotes: BidQuote[] = [
+      { contractType: "call", expiration: "2026-07-24", strike: 738, bid: 0, gamma: 0.012 },
+    ];
+    const out = applySchwabBid(rows, quotes);
+    expect(out[0].gamma).toBe(0.012);
+    // el precio no se toca porque el bid no era válido
+    expect(out[0].price).toBe(rows[0].price);
+    expect(out[0].priceSource).toBe(rows[0].priceSource);
+  });
+
+  it("aplica bid y gamma juntos cuando ambos son válidos", () => {
+    const quotes: BidQuote[] = [
+      { contractType: "call", expiration: "2026-07-24", strike: 738, bid: 0.56, gamma: 0.02 },
+    ];
+    const out = applySchwabBid(rows, quotes);
+    expect(out[0].price).toBe(0.56);
+    expect(out[0].gamma).toBe(0.02);
+  });
+
+  it("ignora gamma nula o no positiva", () => {
+    const quotes: BidQuote[] = [
+      { contractType: "call", expiration: "2026-07-24", strike: 738, bid: 0.56, gamma: 0 },
+      { contractType: "put", expiration: "2026-07-24", strike: 700, bid: null, gamma: null },
+    ];
+    const out = applySchwabBid(rows, quotes);
+    expect(out[0].gamma).toBeUndefined();
+    expect(out[1]).toEqual(rows[1]);
+  });
 });
 
 describe("countExpirations", () => {
