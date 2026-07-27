@@ -558,7 +558,7 @@ export default function Dashboard() {
 
             {structure && <ProWallsCard ticker={ticker} structure={structure} gex={gex} horizonDays={horizonDays} levels={levels} />}
 
-            <LiveIntradayChart ticker={ticker} levels={levels} />
+            <LiveIntradayChart ticker={ticker} levels={levels} gex={gex} />
 
             {heatmap && heatmap.cells.length > 0 && <GexHeatmapCard h={heatmap} />}
 

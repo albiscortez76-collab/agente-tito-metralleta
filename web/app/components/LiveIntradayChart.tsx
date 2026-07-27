@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { TfBar } from "@/lib/types";
 import type { LevelsReport } from "@/lib/levels";
+import type { GexAnalysis } from "@/lib/gex";
 import { px } from "../format";
 
 const MIN_STRENGTH = 35; // mismo umbral que las líneas punteadas de ProWallsCard
@@ -39,9 +40,11 @@ type CandleSeries = {
 export default function LiveIntradayChart({
   ticker,
   levels,
+  gex,
 }: {
   ticker: string;
   levels: LevelsReport | null;
+  gex: GexAnalysis | null;
 }) {
   const chartElRef = useRef<HTMLDivElement>(null);
   const seriesRef = useRef<CandleSeries | null>(null);
@@ -128,8 +131,43 @@ export default function LiveIntradayChart({
         }),
       );
     }
+
+    // Call wall / put wall / zero gamma — dinámicos: se mueven solos cada 20s
+    // según entra open interest y flujo nuevo (misma lógica de lib/gex.ts que
+    // ya usa el heatmap y Strike Walls, no es un cálculo aparte).
+    const callWall = (gex?.nodes ?? [])
+      .filter((n) => n.side === "call")
+      .sort((a, b) => b.netGex - a.netGex)[0] ?? null;
+    const putWall = (gex?.nodes ?? [])
+      .filter((n) => n.side === "put")
+      .sort((a, b) => a.netGex - b.netGex)[0] ?? null;
+
+    if (callWall) {
+      priceLinesRef.current.push(
+        seriesRef.current.createPriceLine({
+          price: callWall.strike, color: "#b8880f", lineWidth: 2, lineStyle: 3, axisLabelVisible: true,
+          title: `Call Wall $${px.format(callWall.strike)}`,
+        }),
+      );
+    }
+    if (putWall) {
+      priceLinesRef.current.push(
+        seriesRef.current.createPriceLine({
+          price: putWall.strike, color: "#6b5cd6", lineWidth: 2, lineStyle: 3, axisLabelVisible: true,
+          title: `Put Wall $${px.format(putWall.strike)}`,
+        }),
+      );
+    }
+    if (gex?.flipStrike != null) {
+      priceLinesRef.current.push(
+        seriesRef.current.createPriceLine({
+          price: gex.flipStrike, color: "#36bffa", lineWidth: 2, lineStyle: 3, axisLabelVisible: true,
+          title: `Zero Gamma $${px.format(gex.flipStrike)}`,
+        }),
+      );
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, levels]);
+  }, [ready, levels, gex]);
 
   // ── Histórico inicial + datos en vivo (streaming o sondeo, según la temporalidad) ──
   useEffect(() => {
@@ -224,10 +262,27 @@ export default function LiveIntradayChart({
         {cfg.live
           ? "Streaming real (Schwab CHART_EQUITY, push por WebSocket) — sin sondeo."
           : `Se actualiza sola cada ${Math.round((cfg.pollMs ?? 20_000) / 1000)}s.`}
-        {" "}Las líneas punteadas son tus soportes y resistencias automáticos.
+        {" "}Todas las líneas son automáticas y se mueven solas según cambia la cadena de opciones.
         {lastUpdate && (
           <span className="muted"> — actualizado {new Date(lastUpdate).toLocaleTimeString("es-ES", { hour12: false })}</span>
         )}
+      </div>
+      <div className="pro-legend" style={{ marginBottom: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ width: 14, height: 0, borderTop: "2px dotted #f04438" }} />Resistencia
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ width: 14, height: 0, borderTop: "2px dotted #12b76a" }} />Soporte
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ width: 14, height: 0, borderTop: "2px dashed #b8880f" }} />Call Wall
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ width: 14, height: 0, borderTop: "2px dashed #6b5cd6" }} />Put Wall
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ width: 14, height: 0, borderTop: "2px dashed #36bffa" }} />Zero Gamma
+        </div>
       </div>
       {error && <div className="feed-empty">⚠ {error}</div>}
       {!bars && <div className="feed-empty">Cargando velas…</div>}
