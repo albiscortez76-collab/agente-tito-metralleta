@@ -119,6 +119,22 @@ export async function getAccessToken(): Promise<string> {
   return json.access_token;
 }
 
+export interface StreamerInfo {
+  streamerSocketUrl: string;
+  schwabClientCustomerId: string;
+  schwabClientCorrelId: string;
+  schwabClientChannel: string;
+  schwabClientFunctionId: string;
+}
+
+/** Info de conexión del streamer (WebSocket) — LOGIN necesita estos 4 campos + el access token. */
+export async function getStreamerInfo(): Promise<StreamerInfo> {
+  const json = await getJson<{ streamerInfo?: StreamerInfo[] }>("/trader/v1/userPreference");
+  const si = json.streamerInfo?.[0];
+  if (!si) throw new SchwabError("Schwab no devolvió streamerInfo (userPreference).");
+  return si;
+}
+
 async function getJson<T>(path: string): Promise<T> {
   const token = await getAccessToken();
   const res = await fetch(`${BASE_URL}${path}`, {
