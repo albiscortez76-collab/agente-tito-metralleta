@@ -106,7 +106,7 @@ export default function GexHeatmapCard({ h }: { h: GexHeatmap }) {
                       onMouseEnter={() => setHover(c)}
                       onMouseLeave={() => setHover(null)}
                     >
-                      {c.intensity > 0.12 && <span>{fmtGex(c.netGex)}</span>}
+                      <span>{fmtGex(c.netGex)}</span>
                     </div>
                   );
                 })}
