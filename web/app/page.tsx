@@ -30,6 +30,7 @@ import NewsCard from "./components/NewsCard";
 import NewsAlertBanner from "./components/NewsAlertBanner";
 import LevelsCard from "./components/LevelsCard";
 import ProWallsCard from "./components/ProWallsCard";
+import LiveIntradayChart from "./components/LiveIntradayChart";
 import GexHeatmapCard from "./components/GexHeatmapCard";
 import TradesFeed from "./components/TradesFeed";
 import CompanyHeader from "./components/CompanyHeader";
@@ -556,6 +557,8 @@ export default function Dashboard() {
             {!levels && <NewsCard ticker={ticker} company={company} callPct={callPct} />}
 
             {structure && <ProWallsCard ticker={ticker} structure={structure} gex={gex} horizonDays={horizonDays} levels={levels} />}
+
+            <LiveIntradayChart ticker={ticker} levels={levels} />
 
             {heatmap && heatmap.cells.length > 0 && <GexHeatmapCard h={heatmap} />}
 
