@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { GexAnalysis } from "@/lib/gex";
+import type { GexBotMaxChange, GexBotChangePoint } from "@/lib/gexbot";
 import { px } from "../format";
 
 interface Snapshot {
@@ -44,7 +45,16 @@ function closestSnapshot(history: Snapshot[], targetTime: number): Snapshot | nu
  * prendido arriba) — sin historial no hay "cambio" que mostrar, es matemática
  * básica, no un dato que un proveedor entregue ya calculado.
  */
-export default function GexChangeTable({ ticker, gex }: { ticker: string; gex: GexAnalysis | null }) {
+export default function GexChangeTable({
+  ticker,
+  gex,
+  gexbot,
+}: {
+  ticker: string;
+  gex: GexAnalysis | null;
+  /** Cambio real de GexBot (el strike que más se movió en cada ventana) — manda sobre la estimación propia. */
+  gexbot?: GexBotMaxChange | null;
+}) {
   const historyRef = useRef<Snapshot[]>([]);
   const prevTickerRef = useRef(ticker);
   const [, bump] = useState(0);
@@ -63,9 +73,12 @@ export default function GexChangeTable({ ticker, gex }: { ticker: string; gex: G
     bump((x) => x + 1);
   }, [ticker, gex]);
 
-  if (!gex || gex.nodes.length === 0) return null;
+  const hasEstimate = !!gex && gex.nodes.length > 0;
+  if (!hasEstimate && !gexbot) return null;
 
-  const topStrikes = [...gex.nodes].sort((a, b) => Math.abs(b.netGex) - Math.abs(a.netGex)).slice(0, TOP_N);
+  const topStrikes = hasEstimate
+    ? [...gex!.nodes].sort((a, b) => Math.abs(b.netGex) - Math.abs(a.netGex)).slice(0, TOP_N)
+    : [];
   const now = Date.now();
   // Con solo 1-2 fotos casi simultáneas, "1 min" compararía el ahora contra sí
   // mismo (todo $0) — hay que esperar a tener de verdad al menos ~45s de
@@ -81,17 +94,21 @@ export default function GexChangeTable({ ticker, gex }: { ticker: string; gex: G
           <span className="pro-badge">PRO</span>
         </div>
         <div className="pro-sub">
-          Cuánto se movió el gamma neto de cada strike en los últimos minutos — <b>verde</b> = ganó
-          peso de calls, <b>rojo</b> = ganó peso de puts. Necesita <b>&quot;🔄 Auto (20s)&quot;</b> prendido
-          arriba para ir acumulando historial; recién buscado el ticker no hay nada que comparar todavía.
+          {gexbot
+            ? "El strike que más se movió en cada ventana — dato real de GexBot."
+            : (<>Cuánto se movió el gamma neto de cada strike en los últimos minutos — <b>verde</b> = ganó
+                peso de calls, <b>rojo</b> = ganó peso de puts. Necesita <b>&quot;🔄 Auto (20s)&quot;</b> prendido
+                arriba para ir acumulando historial (estimado por el agente; conecta GexBot para el dato real).</>)}
         </div>
       </div>
 
-      {!enoughHistory && (
+      {gexbot && <GexBotChangeRow gexbot={gexbot} />}
+
+      {!gexbot && !enoughHistory && (
         <div className="feed-empty">Acumulando historial… (necesita al menos 2 refrescos con Auto prendido)</div>
       )}
 
-      {enoughHistory && (
+      {!gexbot && enoughHistory && (
         <div className="tablewrap">
           <table>
             <thead>
@@ -121,5 +138,37 @@ export default function GexChangeTable({ ticker, gex }: { ticker: string; gex: G
         </div>
       )}
     </section>
+  );
+}
+
+const GEXBOT_WINDOWS: { label: string; key: keyof GexBotMaxChange }[] = [
+  { label: "Ahora", key: "current" },
+  { label: "1 min", key: "oneMin" },
+  { label: "5 min", key: "fiveMin" },
+  { label: "10 min", key: "tenMin" },
+  { label: "15 min", key: "fifteenMin" },
+  { label: "30 min", key: "thirtyMin" },
+];
+
+function GexBotChangeRow({ gexbot }: { gexbot: GexBotMaxChange }) {
+  return (
+    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+      {GEXBOT_WINDOWS.map(({ label, key }) => {
+        const p: GexBotChangePoint = gexbot[key];
+        return (
+          <div
+            key={label}
+            className="wall-stat"
+            style={{ flex: "1 1 140px" }}
+          >
+            <div className="wall-stat-label">{label}</div>
+            <div className="wall-stat-value" style={{ color: p.value >= 0 ? "#12b76a" : "#f04438" }}>
+              {fmtGex(p.value)}
+            </div>
+            <div className="wall-stat-sub">strike ${px.format(p.strike)}</div>
+          </div>
+        );
+      })}
+    </div>
   );
 }

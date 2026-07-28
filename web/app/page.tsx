@@ -8,6 +8,7 @@ import type { IvContextScore } from "@/lib/ivcontext";
 import type { ValidationScore } from "@/lib/validation";
 import type { ChainSnapshot } from "@/lib/chainStore";
 import { gexAnalysis, type TradeLite } from "@/lib/gex";
+import type { GexBotMajors, GexBotMaxChange } from "@/lib/gexbot";
 import { gexHeatmap, type HeatTrade } from "@/lib/gexHeatmap";
 import { predictPro } from "@/lib/prediction";
 import { findLevels, type ChainLevel, type FlowLevel } from "@/lib/levels";
@@ -88,6 +89,8 @@ export default function Dashboard() {
   const [notable, setNotable] = useState<FlowRow[] | null>(null);
   const [flowMeta, setFlowMeta] = useState<FlowMeta | null>(null);
 
+  const [gexbotMajors, setGexbotMajors] = useState<GexBotMajors | null>(null);
+  const [gexbotMaxChange, setGexbotMaxChange] = useState<GexBotMaxChange | null>(null);
   const [chainErr, setChainErr] = useState<string | null>(null);
   const [flowErr, setFlowErr] = useState<string | null>(null);
   const [showChain, setShowChain] = useState(false);
@@ -287,6 +290,18 @@ export default function Dashboard() {
       .catch(() => setTelegramStatus("error"));
   }
 
+  /** GEX real de GexBot (si está configurado) — plus, no requisito; no rompe nada si falla. */
+  function fetchGexbot(tk: string) {
+    fetch(`/api/gexbot?ticker=${encodeURIComponent(tk)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { majors?: GexBotMajors | null; maxChange?: GexBotMaxChange | null } | null) => {
+        if (!d) return;
+        setGexbotMajors(d.majors ?? null);
+        setGexbotMaxChange(d.maxChange ?? null);
+      })
+      .catch(() => {});
+  }
+
   function runSearch(t: string) {
     const tk = normalizeTicker(t);
     if (!tk || busy) return;
@@ -301,9 +316,12 @@ export default function Dashboard() {
     setUnusuality(null); setUnusualRows(null); setIvContext(null); setValidation(null);
     setNotable(null); setFlowMeta(null);
     setChainErr(null); setFlowErr(null);
+    setGexbotMajors(null); setGexbotMaxChange(null);
     chainDoneRef.current = false; flowDoneRef.current = false;
     setShowChain(false);
     setCalib({ biasPct: null, samples: 0 }); setCalibReady(false); savedRef.current = null;
+
+    fetchGexbot(tk);
 
     // Backtest del sub-agente 6 sobre los flows ya guardados (no bloquea las streams).
     fetch(`/api/validation?ticker=${encodeURIComponent(tk)}`)
@@ -369,6 +387,7 @@ export default function Dashboard() {
   function refreshLive() {
     if (!ticker || liveRefreshing.current) return;
     liveRefreshing.current = true;
+    fetchGexbot(ticker);
     let chainDone = false;
     let flowDone = false;
     const maybeDone = () => {
@@ -561,14 +580,14 @@ export default function Dashboard() {
 
             {heatmap && heatmap.cells.length > 0 ? (
               <div className="grid-2" style={{ gridTemplateColumns: "2.2fr 1fr" }}>
-                <LiveIntradayChart ticker={ticker} levels={levels} gex={gex} />
+                <LiveIntradayChart ticker={ticker} levels={levels} gex={gex} gexbot={gexbotMajors} />
                 <GexHeatmapCard h={heatmap} />
               </div>
             ) : (
               <LiveIntradayChart ticker={ticker} levels={levels} gex={gex} />
             )}
 
-            <GexChangeTable ticker={ticker} gex={gex} />
+            <GexChangeTable ticker={ticker} gex={gex} gexbot={gexbotMaxChange} />
 
             {unusualRows && <TradesFeed rows={unusualRows} />}
 

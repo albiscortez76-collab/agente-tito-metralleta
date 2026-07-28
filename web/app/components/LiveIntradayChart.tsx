@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { TfBar } from "@/lib/types";
 import type { LevelsReport } from "@/lib/levels";
 import type { GexAnalysis } from "@/lib/gex";
+import type { GexBotMajors } from "@/lib/gexbot";
 import { resampleBars } from "@/lib/resampleBars";
 import { px } from "../format";
 
@@ -43,10 +44,13 @@ export default function LiveIntradayChart({
   ticker,
   levels,
   gex,
+  gexbot,
 }: {
   ticker: string;
   levels: LevelsReport | null;
   gex: GexAnalysis | null;
+  /** Call Wall/Put Wall/Zero Gamma REALES de GexBot — mandan sobre la estimación propia cuando existen. */
+  gexbot?: GexBotMajors | null;
 }) {
   const chartElRef = useRef<HTMLDivElement>(null);
   const seriesRef = useRef<CandleSeries | null>(null);
@@ -135,41 +139,47 @@ export default function LiveIntradayChart({
       );
     }
 
-    // Call wall / put wall / zero gamma — dinámicos: reusan lib/gex.ts (misma
-    // fuente que el heatmap y Strike Walls), se mueven solos con cada refresco.
-    const callWall = (gex?.nodes ?? [])
+    // Call wall / put wall / zero gamma — GexBot manda cuando está disponible (es
+    // el dato REAL, no una estimación); si no, se cae a lib/gex.ts (misma fuente
+    // que el heatmap y Strike Walls). Ambos se mueven solos con cada refresco.
+    const estCallWall = (gex?.nodes ?? [])
       .filter((n) => n.side === "call")
       .sort((a, b) => b.netGex - a.netGex)[0] ?? null;
-    const putWall = (gex?.nodes ?? [])
+    const estPutWall = (gex?.nodes ?? [])
       .filter((n) => n.side === "put")
       .sort((a, b) => a.netGex - b.netGex)[0] ?? null;
 
-    if (callWall) {
+    const callWallPrice = gexbot?.callWall ?? estCallWall?.strike ?? null;
+    const putWallPrice = gexbot?.putWall ?? estPutWall?.strike ?? null;
+    const zeroGammaPrice = gexbot?.zeroGamma ?? gex?.flipStrike ?? null;
+    const suffix = gexbot ? "(GexBot)" : "(estimado)";
+
+    if (callWallPrice != null) {
       priceLinesRef.current.push(
         seriesRef.current.createPriceLine({
-          price: callWall.strike, color: "#b8880f", lineWidth: 2, lineStyle: 3, axisLabelVisible: true,
-          title: `Call Wall $${px.format(callWall.strike)}`,
+          price: callWallPrice, color: "#b8880f", lineWidth: 2, lineStyle: 3, axisLabelVisible: true,
+          title: `Call Wall $${px.format(callWallPrice)} ${suffix}`,
         }),
       );
     }
-    if (putWall) {
+    if (putWallPrice != null) {
       priceLinesRef.current.push(
         seriesRef.current.createPriceLine({
-          price: putWall.strike, color: "#6b5cd6", lineWidth: 2, lineStyle: 3, axisLabelVisible: true,
-          title: `Put Wall $${px.format(putWall.strike)}`,
+          price: putWallPrice, color: "#6b5cd6", lineWidth: 2, lineStyle: 3, axisLabelVisible: true,
+          title: `Put Wall $${px.format(putWallPrice)} ${suffix}`,
         }),
       );
     }
-    if (gex?.flipStrike != null) {
+    if (zeroGammaPrice != null) {
       priceLinesRef.current.push(
         seriesRef.current.createPriceLine({
-          price: gex.flipStrike, color: "#36bffa", lineWidth: 2, lineStyle: 3, axisLabelVisible: true,
-          title: `Zero Gamma $${px.format(gex.flipStrike)}`,
+          price: zeroGammaPrice, color: "#36bffa", lineWidth: 2, lineStyle: 3, axisLabelVisible: true,
+          title: `Zero Gamma $${px.format(zeroGammaPrice)} ${suffix}`,
         }),
       );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, levels, gex]);
+  }, [ready, levels, gex, gexbot]);
 
   // ── Histórico inicial + datos en vivo (streaming agrupado o sondeo REST) ──
   useEffect(() => {
@@ -267,6 +277,7 @@ export default function LiveIntradayChart({
           ? "Streaming real (Schwab CHART_EQUITY, push por WebSocket) — sin sondeo."
           : `Se actualiza sola cada ${Math.round((cfg.pollMs ?? 20_000) / 1000)}s.`}
         {" "}Todas las líneas son automáticas y se mueven solas según cambia la cadena de opciones.
+        {" "}Call Wall/Put Wall/Zero Gamma: {gexbot ? "dato real de GexBot." : "estimados por el agente (conecta GexBot para el dato real)."}
         {lastUpdate && (
           <span className="muted"> — actualizado {new Date(lastUpdate).toLocaleTimeString("es-ES", { hour12: false })}</span>
         )}
