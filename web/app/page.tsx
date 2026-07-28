@@ -578,14 +578,9 @@ export default function Dashboard() {
 
             {structure && <ProWallsCard ticker={ticker} structure={structure} gex={gex} horizonDays={horizonDays} levels={levels} />}
 
-            {heatmap && heatmap.cells.length > 0 ? (
-              <div className="grid-2" style={{ gridTemplateColumns: "2.2fr 1fr" }}>
-                <LiveIntradayChart ticker={ticker} levels={levels} gex={gex} gexbot={gexbotMajors} />
-                <GexHeatmapCard h={heatmap} />
-              </div>
-            ) : (
-              <LiveIntradayChart ticker={ticker} levels={levels} gex={gex} />
-            )}
+            <LiveIntradayChart ticker={ticker} levels={levels} gex={gex} gexbot={gexbotMajors} />
+
+            {heatmap && heatmap.cells.length > 0 && <GexHeatmapCard h={heatmap} />}
 
             <GexChangeTable ticker={ticker} gex={gex} gexbot={gexbotMaxChange} />
 
